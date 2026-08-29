@@ -7,7 +7,7 @@
 | 🪟 Windows PC | [WINDOWS-SETUP.md](WINDOWS-SETUP.md) — 12 steps, start to finish |
 | 🍎 macOS | [PLATFORM-SETUP.md](PLATFORM-SETUP.md#1-macos-setup) — 10 steps |
 | 🐧 Linux / WSL | [PLATFORM-SETUP.md](PLATFORM-SETUP.md#2-linux-setup-ubuntudebian) — 10 steps |
-| 🤖 Hermes + Telegram | [HERMES-SETUP.md](HERMES-SETUP.md) — monitoring setup |
+| 🤖 Hermes + Telegram | [HERMES-SETUP.md](HERMES-SETUP.md) — install, connect, monitoring |
 
 Below is a condensed reference for all platforms.
 
@@ -185,9 +185,9 @@ nssm stop HL-MM-Bot
 | Document | Contents |
 |----------|---------|
 | [README.md](README.md) | Full strategy overview, architecture, configuration reference |
-| [WINDOWS-SETUP.md](WINDOWS-SETUP.md) | Complete Windows PC setup — 12 steps |
-| [PLATFORM-SETUP.md](PLATFORM-SETUP.md) | macOS + Linux setup — 10 steps each |
-| [HERMES-SETUP.md](HERMES-SETUP.md) | Hermes Agent + Telegram monitoring |
+| [WINDOWS-SETUP.md](WINDOWS-SETUP.md) | Complete Windows PC setup — 12 steps from zero to running |
+| [PLATFORM-SETUP.md](PLATFORM-SETUP.md) | macOS (10 steps) + Linux (10 steps) setup guides |
+| [HERMES-SETUP.md](HERMES-SETUP.md) | Hermes Agent install, Telegram bot connection, 30-min monitoring cron job |
 | [This file](INSTALL-GUIDE.md) | Quick reference for all platforms |
 
 ## Safety Notes

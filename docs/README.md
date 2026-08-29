@@ -19,8 +19,11 @@ A complete algorithmic trading system for Hyperliquid perpetual futures.
 | 🪟 **Windows PC** | [WINDOWS-SETUP.md](docs/WINDOWS-SETUP.md) | 12 steps — VPN → Python → bots → Hermes → Telegram |
 | 🍎 **macOS** | [docs/PLATFORM-SETUP.md](docs/PLATFORM-SETUP.md#1-macos-setup) | 10 steps — Homebrew → bots → launchd → Hermes |
 | 🐧 **Linux / WSL** | [docs/PLATFORM-SETUP.md](docs/PLATFORM-SETUP.md#2-linux-setup-ubuntudebian) | 10 steps — apt → bots → systemd → Hermes |
+| 🤖 **Hermes + Telegram** | [docs/HERMES-SETUP.md](docs/HERMES-SETUP.md) | Install Hermes, connect Telegram, set up 30-min monitoring alerts |
 
 **All platforms need a VPN connected to South Africa or Mexico** (Hyperliquid blocks US IPs).
+
+> **New to this?** Follow your platform guide above (Windows, macOS, or Linux). Each one walks you through everything step by step — including Hermes setup at the end. The [HERMES-SETUP.md](docs/HERMES-SETUP.md) guide is also standalone if you want to add monitoring to an existing installation.
 
 ## Setup Overview (All Platforms)
 
@@ -231,7 +234,7 @@ For automated Telegram alerts every 30 minutes, set up Hermes Agent — see [doc
 |----------|-------------|
 | [WINDOWS-SETUP.md](docs/WINDOWS-SETUP.md) | Complete Windows PC setup — 12 steps from zero to running |
 | [PLATFORM-SETUP.md](docs/PLATFORM-SETUP.md) | macOS (10 steps) + Linux (10 steps) setup guides |
-| [HERMES-SETUP.md](docs/HERMES-SETUP.md) | Hermes Agent install, Telegram connection, monitoring cron jobs |
+| [HERMES-SETUP.md](docs/HERMES-SETUP.md) | Hermes Agent install, Telegram bot connection, 30-min monitoring cron job |
 | [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) | Quick reference install guide (all platforms) |
 | **This README.md** | Strategy overview, configuration, architecture |
 
