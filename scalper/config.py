@@ -264,7 +264,7 @@ class BotConfig:
     use_mainnet: bool = os.getenv("USE_MAINNET", "false").lower() in ("true", "1", "yes")
 
     # ── Leverage ────────────────────────────────────────────────────
-    leverage: int = 7                        # Reduced: 10x → 7x (less volatile)
+    leverage: int = 10                        # V6: 7x→10x — targets 3-5% per win on margin
     cross_margin: bool = False
 
     # ── Risk Management ─────────────────────────────────────────────
