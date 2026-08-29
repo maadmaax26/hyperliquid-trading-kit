@@ -141,12 +141,12 @@ PAXG_CONFIG = AssetConfig(
 
 ZEC_CONFIG = AssetConfig(
     coin="ZEC",
-    take_profit_pct=0.0042,         # V6: 0.28%→0.42% (1.5x) — fees 25%→17% of TP. BE WR 64%→51%
-    stop_loss_pct=0.0030,           # Keep 0.30% SL
+    take_profit_pct=0.0060,         # V6.1: 0.42%→0.60% (2x ATR) — better R:R, wider for trend captures
+    stop_loss_pct=0.0045,           # V6.1: 0.30%→0.45% (1.5x ATR) — was 1.0 ATR, too tight, noise stopped out
     trailing_activate_pct=0.0030,   # V6: 0.20%→0.30% — activate later
-    trailing_stop_pct=0.0009,       # V6: 0.06%→0.09% — wider trail for ZEC volatility
+    trailing_stop_pct=0.0015,       # V6.1: 0.09%→0.15% (0.5 ATR) — wider trail for trend moves
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
-    min_signal_score=99,            # V6.1: DISABLED — 33% WR, -$9.44/24h, churning 46 fills. Needs rework.
+    min_signal_score=10,            # V6.1: RE-ENABLED (was 99/disabled) — trend filter now works
     cooldown_seconds=300,           # V6.1: 180→300 — reduce churning/fees
     max_spread_pct=0.002,           # ZEC spreads tend to be wider than BTC/ETH
 )

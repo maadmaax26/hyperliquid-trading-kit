@@ -1393,21 +1393,28 @@ class HyperliquidScalper:
                 pass
 
         # ── V5: 1h trend filter — skip strongly counter-trend scalps ──
+        # V6.1 FIX: Swing indicators were never fetched because swing is disabled.
+        # This made the 1h trend filter silently dead code. Now fetch 1h data directly.
         swing_indicators = self.cached_swing_indicators.get(f"{coin}_swing")
+        if not swing_indicators:
+            # V6.1: Fetch 1h candles directly for trend filter (swing may be disabled)
+            swing_indicators = self._fetch_swing_candles(coin)
         if swing_indicators:
             try:
                 swing_ema50_arr = swing_indicators['ema_50'] if 'ema_50' in swing_indicators else None
+                swing_adx = swing_indicators.get('adx', 0) if isinstance(swing_indicators, dict) else 0
                 # Use the last close from swing indicators (or fetch from prices)
                 swing_close = self.prices.get(coin, 0)
                 if swing_ema50_arr is not None and len(swing_ema50_arr) > 0 and swing_close:
                     swing_ema50 = float(swing_ema50_arr[-1])
                     if swing_ema50 > 0:
                         trend_dev = (swing_close - swing_ema50) / swing_ema50
+                        # V6.1: Stronger trend filter — block counter-trend when 1h ADX > 25
                         if signal.direction == Direction.LONG and trend_dev < -0.003:
                             log.debug(f"📊 {coin} [SCALP] LONG skipped — 1h close {trend_dev*100:.2f}% below EMA50 (counter-trend)")
                             return
                         elif signal.direction == Direction.SHORT and trend_dev > 0.003:
-                            log.debug(f"📊 {coin} [SCALP] SHORT skipped — 1h close {trend_dev*100:.2f}% above EMA50 (counter-trend)")
+                            log.debug(f"📊 {coin} [SCALP] SHORT skipped — 1h close {trend_dev*100:.2f}% above EMA50 (counter-trend, ADX={swing_adx:.0f})")
                             return
             except (TypeError, IndexError, KeyError):
                 pass
