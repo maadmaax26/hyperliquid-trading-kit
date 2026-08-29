@@ -167,6 +167,14 @@ class SignalEngine:
             vwap_signals = self._generate_vwap_signals(raw_candles)
             signals.extend(vwap_signals)
         
+        # ══════════════════════════════════════════════════════════════
+        # V6: MOMENTUM BREAKOUT — trend-following signal for strong moves
+        # Generates LONGs in uptrends, SHORTs in downtrends
+        # Complements mean-reversion signals (which work in ranges)
+        # ══════════════════════════════════════════════════════════════
+        momentum_signals = self._generate_momentum_signals(indicators)
+        signals.extend(momentum_signals)
+        
         # Return highest scored signal, or NONE if no signals
         if not signals:
             return Signal(
@@ -295,6 +303,120 @@ class SignalEngine:
                 score=total_score,
                 max_score=10,
                 strategy=f"MULTI_CONFLUENCE:{strategy_names}",
+                timeframe="5m",
+                reasons=reasons
+            ))
+        
+        return signals
+    
+    def _generate_momentum_signals(self, data: Dict) -> List[Signal]:
+        """V6: Generate trend-following momentum signals.
+        
+        This complements the mean-reversion signals above. In strong trends,
+        mean-reversion signals generate counter-trend trades that get blocked
+        by the 1h trend filter. This signal generates WITH-trend entries:
+        
+        LONG when: ADX > 25 (trending) + EMA9 > EMA21 (bullish) + MACD histogram rising
+        SHORT when: ADX > 25 (trending) + EMA9 < EMA21 (bearish) + MACD histogram falling
+        
+        Key difference from confluence signals: these use momentum continuation,
+        not reversal. RSI >60 is treated as bullish confirmation (strong momentum),
+        not as an overbought short signal.
+        """
+        signals = []
+        
+        # Get indicator values
+        rsi = data.get('rsi_14', 50) if hasattr(data, 'get') else 50
+        ema_fast = data.get('ema_9', 0) if hasattr(data, 'get') else 0
+        ema_slow = data.get('ema_21', 0) if hasattr(data, 'get') else 0
+        macd = data.get('macd', 0) if hasattr(data, 'get') else 0
+        macd_signal = data.get('macd_signal', 0) if hasattr(data, 'get') else 0
+        macd_histogram = data.get('macd_histogram', 0) if hasattr(data, 'get') else 0
+        volume_ratio = data.get('volume_ratio', 1.0) if hasattr(data, 'get') else 1.0
+        adx = data.get('adx', 0) if hasattr(data, 'get') else 0
+        bb_position = data.get('bb_position', 0.5) if hasattr(data, 'get') else 0.5
+        
+        # Need ADX > 25 to confirm trending market
+        if adx < 25:
+            return signals
+        
+        long_factors = []
+        short_factors = []
+        
+        # ── LONG momentum: uptrend continuation ──
+        if ema_fast > ema_slow:
+            # EMA bullish alignment
+            long_factors.append(("MOM_EMA_BULL", 3, f"EMA9>EMA21 bullish (ADX={adx:.0f})"))
+            
+            # MACD bullish momentum (histogram rising = accelerating)
+            if macd > macd_signal and macd_histogram > 0:
+                long_factors.append(("MOM_MACD_BULL", 3, "MACD bullish + histogram rising"))
+            elif macd > 0 and macd > macd_signal:
+                long_factors.append(("MOM_MACD_BULL", 2, "MACD positive momentum"))
+            
+            # RSI in bullish zone (50-80 = strong momentum, NOT overbought)
+            if 50 < rsi < 80:
+                long_factors.append(("MOM_RSI_BULL", 2, f"RSI bullish momentum ({rsi:.0f})"))
+            elif rsi >= 80:
+                # Extremely overbought but in strong trend — still valid but weaker
+                long_factors.append(("MOM_RSI_EXTREME", 1, f"RSI extreme ({rsi:.0f}) — momentum but risky"))
+            
+            # Volume confirmation
+            if volume_ratio > 1.5:
+                long_factors.append(("MOM_VOL", 1, f"Volume spike {volume_ratio:.1f}x"))
+            
+            # BB position: riding upper band = strong trend
+            if bb_position > 0.7:
+                long_factors.append(("MOM_BB_UPPER", 1, "Price riding BB upper — trend strength"))
+        
+        # ── SHORT momentum: downtrend continuation ──
+        elif ema_fast < ema_slow:
+            # EMA bearish alignment
+            short_factors.append(("MOM_EMA_BEAR", 3, f"EMA9<EMA21 bearish (ADX={adx:.0f})"))
+            
+            # MACD bearish momentum (histogram falling = accelerating down)
+            if macd < macd_signal and macd_histogram < 0:
+                short_factors.append(("MOM_MACD_BEAR", 3, "MACD bearish + histogram falling"))
+            elif macd < 0 and macd < macd_signal:
+                short_factors.append(("MOM_MACD_BEAR", 2, "MACD negative momentum"))
+            
+            # RSI in bearish zone (20-50 = strong downside momentum)
+            if 20 < rsi < 50:
+                short_factors.append(("MOM_RSI_BEAR", 2, f"RSI bearish momentum ({rsi:.0f})"))
+            elif rsi <= 20:
+                short_factors.append(("MOM_RSI_EXTREME", 1, f"RSI extreme ({rsi:.0f}) — momentum but risky"))
+            
+            # Volume confirmation
+            if volume_ratio > 1.5:
+                short_factors.append(("MOM_VOL", 1, f"Volume spike {volume_ratio:.1f}x"))
+            
+            # BB position: riding lower band = strong downtrend
+            if bb_position < 0.3:
+                short_factors.append(("MOM_BB_LOWER", 1, "Price riding BB lower — trend strength"))
+        
+        # Require 2+ factors for entry (same threshold as confluence signals)
+        if len(long_factors) >= 2:
+            total_score = min(10, 5 + sum(f[1] for f in long_factors))
+            reasons = [f[2] for f in long_factors]
+            strategy_names = "+".join(f[0] for f in long_factors[:3])
+            signals.append(Signal(
+                direction=Direction.LONG,
+                score=total_score,
+                max_score=10,
+                strategy=f"MOMENTUM:{strategy_names}",
+                timeframe="5m",
+                reasons=reasons
+            ))
+        
+        if len(short_factors) >= 2:
+            total_score = min(10, 5 + sum(f[1] for f in short_factors))
+            reasons = [f[2] for f in short_factors]
+            strategy_names = "+".join(f[0] for f in short_factors[:3])
+            signals.append(Signal(
+                direction=Direction.SHORT,
+                score=total_score,
+                max_score=10,
+                strategy=f"MOMENTUM:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
             ))

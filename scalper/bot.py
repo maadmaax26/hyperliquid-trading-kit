@@ -1347,7 +1347,7 @@ class HyperliquidScalper:
             return
 
         # ── V5: Volatility regime gate — skip dead markets ──
-        indicators = self.cached_indicators.get(coin)
+        indicators = self.cached_indicators.get(f"{coin}_{self.config.candle_interval}")
         if indicators:
             try:
                 atr_arr = indicators['atr'] if 'atr' in indicators else None
@@ -1363,7 +1363,7 @@ class HyperliquidScalper:
                 pass
 
         # ── V5: 1h trend filter — skip strongly counter-trend scalps ──
-        swing_indicators = self.cached_swing_indicators.get(coin)
+        swing_indicators = self.cached_swing_indicators.get(f"{coin}_swing")
         if swing_indicators:
             try:
                 swing_ema50_arr = swing_indicators['ema_50'] if 'ema_50' in swing_indicators else None
@@ -1373,10 +1373,10 @@ class HyperliquidScalper:
                     swing_ema50 = float(swing_ema50_arr[-1])
                     if swing_ema50 > 0:
                         trend_dev = (swing_close - swing_ema50) / swing_ema50
-                        if signal.direction == Direction.LONG and trend_dev < -0.002:
+                        if signal.direction == Direction.LONG and trend_dev < -0.003:
                             log.debug(f"📊 {coin} [SCALP] LONG skipped — 1h close {trend_dev*100:.2f}% below EMA50 (counter-trend)")
                             return
-                        elif signal.direction == Direction.SHORT and trend_dev > 0.002:
+                        elif signal.direction == Direction.SHORT and trend_dev > 0.003:
                             log.debug(f"📊 {coin} [SCALP] SHORT skipped — 1h close {trend_dev*100:.2f}% above EMA50 (counter-trend)")
                             return
             except (TypeError, IndexError, KeyError):
@@ -1821,7 +1821,7 @@ class HyperliquidScalper:
 │ ⚡ Scalp [{scalp_status}]: {scalp_count} trades | PnL: ${scalp_pnl:>+.2f}                │
 │ 🔄 Swing [{swing_status}]: {swing_count} trades | PnL: ${swing_pnl:>+.2f}                │
 ├────────────────────────────────────────────────────────────────┤
-│ Prices: {' │ '.join(f"{c} ${self.prices.get(c, 0):>.2f}" for c in list(self.config.assets.keys())[:4])} │
+│ Prices: {' │ '.join(f"{c} ${self.prices.get(c, 0):>7.2f}" for c in self.config.assets)} │
 ├────────────────────────────────────────────────────────────────┤
 │ Positions ({total_position_count}/{self.config.max_concurrent_positions})  │ Open Orders: {order_count}                     │
 {positions_str}└────────────────────────────────────────────────────────────────┘"""

@@ -530,8 +530,8 @@ class HyperliquidMarketMaker:
 
         current_inv_usd = abs(position_size) * self.inventories[coin].last_mid
 
-        # If at max inventory, stop quoting on the side that would increase it
-        if current_inv_usd >= max_inv_usd * 0.95:
+        # If at 80% of max inventory, stop quoting on the side that would increase it
+        if current_inv_usd >= max_inv_usd * 0.80:
             if position_size > 0 and not is_buy:
                 # Long and at max — can still sell (reduce)
                 return True
@@ -658,7 +658,12 @@ class HyperliquidMarketMaker:
         return True
 
     def _check_unwind_needed(self, equity: float):
-        """Check if any positions need forced unwind (too old or too large)."""
+        """Check if any positions need forced unwind (too old or too large).
+        
+        V6: Force-close positions that exceed 150% of max inventory cap.
+        The quoting engine handles gradual unwind via skewed prices, but when
+        inventory gets way over cap (150%+), a market close is safer than waiting.
+        """
         for coin, inv in self.inventories.items():
             if abs(inv.position_size) == 0:
                 continue
@@ -667,8 +672,28 @@ class HyperliquidMarketMaker:
             max_inv_usd = equity * cfg.max_inventory_pct * cfg.leverage
             current_inv_usd = abs(inv.position_size) * inv.last_mid
 
-            # If position is near max, the quoting engine already handles unwind
-            # via skewed prices. No need for forced close here.
+            if max_inv_usd <= 0:
+                continue
+
+            inv_ratio = current_inv_usd / max_inv_usd
+
+            # Force close at 150% of cap — emergency unwind
+            if inv_ratio > 1.5:
+                log.warning(
+                    f"🚨 {coin}: Inventory {inv_ratio:.1%} of cap — FORCED UNWIND"
+                )
+                is_buy = inv.position_size < 0  # short → buy to close
+                close_sz = abs(inv.position_size)
+                try:
+                    result = self.exchange.market_open(coin, is_buy, close_sz, None, 0.01)
+                    status = result.get("status", "unknown")
+                    if status == "ok":
+                        log.info(f"✅ {coin}: Force-closed {close_sz:.4f}")
+                        inv.position_size = 0.0
+                    else:
+                        log.error(f"❌ {coin}: Force close failed: {result}")
+                except Exception as e:
+                    log.error(f"❌ {coin}: Force close error: {e}")
 
     # ════════════════════════════════════════════════════════════════
     # INDICATOR UPDATE

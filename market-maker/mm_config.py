@@ -38,7 +38,7 @@ class MMAssetConfig:
 
 KPEPE_MM = MMAssetConfig(
     coin="kPEPE",
-    order_size_pct=0.035,          # 3.5% equity — above $10 min notional at 3x lev
+    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
     spread_pct=0.0010,             # 0.10% half-spread (raw spread 0.027%, net +0.027%)
     min_spread_pct=0.0004,
     max_spread_pct=0.0040,
@@ -50,7 +50,7 @@ KPEPE_MM = MMAssetConfig(
 
 KBONK_MM = MMAssetConfig(
     coin="kBONK",
-    order_size_pct=0.035,          # 3.5% equity — above $10 min notional at 3x lev
+    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
     spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.033%, net +0.036%)
     min_spread_pct=0.0005,
     max_spread_pct=0.0045,
@@ -62,7 +62,7 @@ KBONK_MM = MMAssetConfig(
 
 ARB_MM = MMAssetConfig(
     coin="ARB",
-    order_size_pct=0.035,          # 3.5% equity — above $10 min notional at 3x lev
+    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
     spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.023%, net +0.020%)
     min_spread_pct=0.0005,
     max_spread_pct=0.0040,
