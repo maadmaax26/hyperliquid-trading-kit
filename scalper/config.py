@@ -87,19 +87,19 @@ BTC_CONFIG = AssetConfig(
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail for bigger moves
     position_size_pct=0.25,         # V6: 35%→25% equal sizing, max 5 positions
     min_signal_score=10,
-    cooldown_seconds=120,
+    cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
 
 ETH_CONFIG = AssetConfig(
     coin="ETH",
-    take_profit_pct=0.0038,         # V6: 0.25%→0.38% (1.5x) — fees 28%→19% of TP. BE WR 67%→55%
+    take_profit_pct=0.0030,         # V6.1: 0.38%→0.30% — was too wide, only 14 fills/24h, 29% WR
     stop_loss_pct=0.0030,           # Keep 0.30% SL
     trailing_activate_pct=0.0025,   # V6: 0.17%→0.25% — activate later
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail
     position_size_pct=0.25,         # V6: 30%→25% equal sizing
     min_signal_score=10,
-    cooldown_seconds=120,
+    cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
 
@@ -111,19 +111,19 @@ SOL_CONFIG = AssetConfig(
     trailing_stop_pct=0.0009,       # V6: 0.06%→0.09% — wider trail for SOL volatility
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
     min_signal_score=9,             # V5: Re-enabled at 9 (was disabled at 20)
-    cooldown_seconds=120,
+    cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.0015,
 )
 
 XRP_CONFIG = AssetConfig(
     coin="XRP",
     take_profit_pct=0.0034,         # V6: 0.23%→0.34% (1.5x) — fees 30%→20% of TP. BE WR 67%→54%
-    stop_loss_pct=0.0025,           # Keep 0.25% SL
+    stop_loss_pct=0.0035,           # V6.1: 0.25%→0.35% — was too tight, 43% WR, stopped on noise
     trailing_activate_pct=0.0025,   # V6: 0.17%→0.25% — activate later
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
     min_signal_score=10,
-    cooldown_seconds=120,
+    cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
 
@@ -135,7 +135,7 @@ PAXG_CONFIG = AssetConfig(
     trailing_stop_pct=0.0010,
     position_size_pct=0.15,         # V6: keep small — PAXG barely moves
     min_signal_score=5,
-    cooldown_seconds=120,           # Extended: 60s → 120s
+    cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.002,
 )
 
@@ -146,8 +146,8 @@ ZEC_CONFIG = AssetConfig(
     trailing_activate_pct=0.0030,   # V6: 0.20%→0.30% — activate later
     trailing_stop_pct=0.0009,       # V6: 0.06%→0.09% — wider trail for ZEC volatility
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
-    min_signal_score=10,            # High conviction only
-    cooldown_seconds=180,           # V5: 180s cooldown
+    min_signal_score=99,            # V6.1: DISABLED — 33% WR, -$9.44/24h, churning 46 fills. Needs rework.
+    cooldown_seconds=300,           # V6.1: 180→300 — reduce churning/fees
     max_spread_pct=0.002,           # ZEC spreads tend to be wider than BTC/ETH
 )
 

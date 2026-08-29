@@ -101,7 +101,7 @@ class HyperliquidScalper:
         self.coin_cooldown_seconds = getattr(config, 'coin_cooldown_seconds', 600)      # 10 min (was 120)
         self.global_cooldown_seconds = getattr(config, 'global_cooldown_seconds', 60) # 1 min (was 20)
         self.max_trades_per_hour = getattr(config, 'max_trades_per_hour', 5)           # 5/hr max (was 10)
-        self.limit_order_timeout = 10        # Seconds to wait for limit fill
+        self.limit_order_timeout = 30        # V6.1: 10→30s — was timing out too fast, 0/508 maker fills
         self.min_partial_fill_pct = 0.50     # Close partial fills below 50%
 
         # ── Exchange sync state ─────────────────────────────────────
