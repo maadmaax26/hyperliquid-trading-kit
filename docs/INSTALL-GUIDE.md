@@ -102,6 +102,7 @@ market-maker/venv/bin/python monitor/hl_status.py --watch
 ## Documentation
 
 - **Full README:** `docs/README.md` — strategy details, configuration, fee structure
+- **Hermes setup:** `docs/HERMES-SETUP.md` — install Hermes Agent, connect Telegram, set up automated monitoring cron jobs
 - **Platform setup:** `docs/PLATFORM-SETUP.md` — Windows, macOS, VPN instructions
 - **Config tuning:** `docs/README.md` → Configuration section — how to change coins, TP/SL, sizes
 
