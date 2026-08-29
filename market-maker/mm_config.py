@@ -116,12 +116,11 @@ class MMConfig:
     max_hold_minutes: int = 120             # Force unwind positions older than this
 
     # ── Assets (no overlap with scalper bot) ────────────────────────
-    # kPEPE: best volume ($270K/5m) + depth ($848K), net +0.027%/round trip
+    # kPEPE: best volume ($270K/5m) + depth ($848K), net +0.027%/round trip, 78% WR
     # kBONK: REMOVED V6 — 30% WR, adverse selection, consistent losses
-    # ARB: solid spread (0.023%), net +0.020%/round trip
+    # ARB: REMOVED V6.1 — 33% WR, -$0.50/24h, adverse selection
     assets: Dict[str, MMAssetConfig] = field(default_factory=lambda: {
         "kPEPE": KPEPE_MM,
-        "ARB": ARB_MM,
     })
 
     # ── Logging ─────────────────────────────────────────────────────
