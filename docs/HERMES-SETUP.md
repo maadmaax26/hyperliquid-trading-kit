@@ -13,15 +13,22 @@ curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 source ~/.bashrc   # or source ~/.zshrc
 ```
 
-### Windows (native, PowerShell)
+### Windows — Download the Desktop App (Recommended)
 
+The Hermes Desktop app is the simplest install path on Windows — it's a native app with a chat interface, no terminal needed for basic use.
+
+1. Go to **https://hermes-agent.nousresearch.com**
+2. Click **Download** and select the **Windows** installer (.exe)
+3. Run the installer — it handles everything: Python, dependencies, CLI, and the desktop app
+4. Launch **Hermes Desktop** from your Start menu
+5. The app opens with a chat window — you're ready to configure
+
+The desktop app includes the full CLI too, so you can open PowerShell and use `hermes` commands if needed. But for day-to-day use, the app's chat interface is all you need.
+
+**Alternative: CLI-only install (no desktop app)**
 ```powershell
 iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 ```
-
-### Or download the desktop app (recommended for Windows/Mac)
-
-Go to https://hermes-agent.nousresearch.com and download the Desktop installer. It includes the CLI and a native app with a chat interface.
 
 ---
 
@@ -29,6 +36,11 @@ Go to https://hermes-agent.nousresearch.com and download the Desktop installer. 
 
 After install, run the setup wizard:
 
+**From the Desktop App:**
+- The app guides you through setup on first launch — pick your LLM provider, enter API key
+- No terminal commands needed
+
+**From the CLI (Linux/macOS/WSL or Windows PowerShell):**
 ```bash
 hermes setup      # Interactive setup — configures paths, tools
 hermes model      # Choose your LLM provider (OpenRouter, OpenAI, Anthropic, etc.)
