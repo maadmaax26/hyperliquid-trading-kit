@@ -1,11 +1,24 @@
-# Hyperliquid Trading Bot — Setup Guide
+# Hyperliquid Trading Bot — Quick Install Guide
+
+**New here?** Use the full step-by-step guide for your platform:
+
+| Platform | Full Guide |
+|----------|-----------|
+| 🪟 Windows PC | [WINDOWS-SETUP.md](WINDOWS-SETUP.md) — 12 steps, start to finish |
+| 🍎 macOS | [PLATFORM-SETUP.md](PLATFORM-SETUP.md#1-macos-setup) — 10 steps |
+| 🐧 Linux / WSL | [PLATFORM-SETUP.md](PLATFORM-SETUP.md#2-linux-setup-ubuntudebian) — 10 steps |
+| 🤖 Hermes + Telegram | [HERMES-SETUP.md](HERMES-SETUP.md) — monitoring setup |
+
+Below is a condensed reference for all platforms.
+
+---
 
 ## Prerequisites
 
-1. **Git** — https://git-scm.com/downloads (Mac: `brew install git`, Linux: `sudo apt install git`)
-2. **Python 3.11+** — https://python.org (Windows: check "Add Python to PATH" during install)
+1. **Git** — https://git-scm.com/downloads
+2. **Python 3.11+** — https://python.org (Windows: check "Add Python to PATH")
 3. **VPN** — connected to South Africa or Mexico (Hyperliquid blocks US IPs)
-4. **Hyperliquid account** with USDC deposited + API agent wallet (generate at app.hyperliquid.xyz → Settings → API)
+4. **Hyperliquid account** with USDC deposited + API agent wallet (app.hyperliquid.xyz → Settings → API)
 
 ## Installation
 
@@ -16,21 +29,58 @@ git clone https://github.com/maadmaax26/hyperliquid-trading-kit.git
 cd hyperliquid-trading-kit
 ```
 
-### Step 2: Run the installer
+### Step 2: Create virtual environments
 
 **Linux / macOS:**
 ```bash
-chmod +x setup.sh
-./setup.sh
+cd scalper
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+cd ..
+
+cd market-maker
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+cd ..
 ```
 
-**Windows:** Open `docs/PLATFORM-SETUP.md` and follow the Windows section — it has step-by-step instructions for venv creation and NSSM service setup.
+**Windows (PowerShell):**
+```powershell
+cd scalper
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+deactivate
+cd ..
 
-### Step 3: Add your wallet details
+cd market-maker
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+deactivate
+cd ..
+```
+
+### Step 3: Configure .env files
 
 ```bash
+# Linux / macOS
+cp scalper/.env.example scalper/.env
+cp market-maker/.env.example market-maker/.env
 nano scalper/.env
 nano market-maker/.env
+```
+
+```powershell
+# Windows
+copy scalper\.env.example scalper\.env
+copy market-maker\.env.example market-maker\.env
+notepad scalper\.env
+notepad market-maker\.env
 ```
 
 Fill in:
@@ -40,45 +90,60 @@ PARENT_ADDRESS=0xYOUR_PARENT_WALLET_ADDRESS
 USE_MAINNET=true
 ```
 
-### Step 4: Start your VPN
+### Step 4: Start VPN and verify
 
-Hyperliquid blocks US IP addresses. Connect to a non-US server (South Africa or Mexico work well).
-
-Verify your connection:
 ```bash
 curl -s ifconfig.me    # Must show a non-US IP
+curl -s https://api.hyperliquid.xyz/info -X POST -H "Content-Type: application/json" -d '{"type":"clearAllMids"}' | head -c 100
 ```
 
 ### Step 5: Test the bots
 
+**Linux / macOS:**
 ```bash
-# Linux / macOS
-scalper/venv/bin/python scalper/main.py
-market-maker/venv/bin/python market-maker/mm_bot.py
-
-# Windows
-scalper\venv\Scripts\python.exe scalper\main.py
-market-maker\venv\Scripts\python.exe market-maker\mm_bot.py
+scalper/venv/bin/python scalper/main.py        # Ctrl+C to stop
+market-maker/venv/bin/python market-maker/mm_bot.py  # Ctrl+C to stop
 ```
 
-Press Ctrl+C to stop.
+**Windows:**
+```powershell
+.\scalper\venv\Scripts\python.exe scalper\main.py
+.\market-maker\venv\Scripts\python.exe market-maker\mm_bot.py
+```
 
 ### Step 6: Start as background services
 
 **Linux (systemd):**
 ```bash
-systemctl --user start hl-scalper-bot hl-mm-bot hl-status.timer
+chmod +x setup.sh
+./setup.sh
+systemctl --user start hl-scalper-bot hl-mm-bot
 ```
 
 **macOS (launchd):**
-See `docs/PLATFORM-SETUP.md` — launchd plist templates included.
+See [PLATFORM-SETUP.md](PLATFORM-SETUP.md#step-8-run-as-background-services-macos-launchd) for launchd plist templates.
 
 **Windows (NSSM):**
-See `docs/PLATFORM-SETUP.md` — NSSM service setup instructions included.
+See [WINDOWS-SETUP.md](WINDOWS-SETUP.md#step-9-install-bots-as-windows-services) for complete NSSM setup.
 
-### Step 7: Run backtests (optional)
+### Step 7: Install Hermes + set up monitoring
 
-See how the strategies perform on 6 months of historical data:
+See [HERMES-SETUP.md](HERMES-SETUP.md) for full instructions. Summary:
+
+1. Install Hermes from https://hermes-agent.nousresearch.com
+2. Run `hermes setup` → configure LLM provider
+3. Run `hermes gateway setup` → connect Telegram
+4. Create monitoring cron job (runs every 30 min):
+
+```bash
+hermes cron create \
+  --name "HL Performance Monitor" \
+  --schedule "30m" \
+  --deliver origin \
+  --prompt "Run the hl_monitor.py script and report equity, per-bot P&L, and alerts"
+```
+
+### Step 8: Run backtests (optional)
 
 ```bash
 market-maker/venv/bin/python simulator/backtest_scalper.py
@@ -86,73 +151,54 @@ market-maker/venv/bin/python simulator/backtest_mm.py
 market-maker/venv/bin/python simulator/coin_optimizer.py
 ```
 
-### Step 8: Monitor
-
-```bash
-# One-shot status report
-market-maker/venv/bin/python monitor/hl_status.py
-
-# Performance monitor with drawdown alerts
-market-maker/venv/bin/python monitor/hl_monitor.py
-
-# Watch mode (refreshes every 30s)
-market-maker/venv/bin/python monitor/hl_status.py --watch
-```
-
-## Documentation
-
-- **Full README:** `docs/README.md` — strategy details, configuration, fee structure
-- **Hermes setup:** `docs/HERMES-SETUP.md` — install Hermes Agent, connect Telegram, set up automated monitoring cron jobs
-- **Platform setup:** `docs/PLATFORM-SETUP.md` — Windows, macOS, VPN instructions
-- **Config tuning:** `docs/README.md` → Configuration section — how to change coins, TP/SL, sizes
-
 ## Managing the Bots
 
 **Linux:**
 ```bash
-# Check status
 systemctl --user status hl-scalper-bot hl-mm-bot
-
-# View logs
 journalctl --user -u hl-scalper-bot -f
-journalctl --user -u hl-mm-bot -f
-
-# Restart
 systemctl --user restart hl-scalper-bot hl-mm-bot
-
-# Stop
 systemctl --user stop hl-scalper-bot hl-mm-bot
 ```
 
 **macOS:**
 ```bash
-# Check status
 launchctl list | grep hl
-
-# View logs
 tail -f ~/hyperliquid-scalper.log
-tail -f ~/hyperliquid-mm.log
-
-# Restart
 launchctl unload ~/Library/LaunchAgents/com.hl.scalper.plist
 launchctl load ~/Library/LaunchAgents/com.hl.scalper.plist
 ```
 
-**Windows (NSSM):**
+**Windows:**
 ```powershell
 nssm status HL-Scalper-Bot
+nssm status HL-MM-Bot
+Get-Content C:\Users\YOUR_USERNAME\hyperliquid-trading-kit\scalper\bot.log -Tail 20
 nssm restart HL-Scalper-Bot
+nssm restart HL-MM-Bot
 nssm stop HL-Scalper-Bot
+nssm stop HL-MM-Bot
 ```
 
-## Support
+## Documentation Index
 
-- GitHub repo: https://github.com/maadmaax26/hyperliquid-trading-kit
-- Report issues: https://github.com/maadmaax26/hyperliquid-trading-kit/issues
+| Document | Contents |
+|----------|---------|
+| [README.md](README.md) | Full strategy overview, architecture, configuration reference |
+| [WINDOWS-SETUP.md](WINDOWS-SETUP.md) | Complete Windows PC setup — 12 steps |
+| [PLATFORM-SETUP.md](PLATFORM-SETUP.md) | macOS + Linux setup — 10 steps each |
+| [HERMES-SETUP.md](HERMES-SETUP.md) | Hermes Agent + Telegram monitoring |
+| [This file](INSTALL-GUIDE.md) | Quick reference for all platforms |
 
 ## Safety Notes
 
 - Start with $50-100 to test before scaling up
 - Both bots share one account — they MUST trade non-overlapping coins
-- Backtests are optimistic — real fills are lower due to slippage and queue position
+- Backtests are optimistic — real fills are lower due to slippage
 - Never trade money you can't afford to lose
+
+## Support
+
+- GitHub: https://github.com/maadmaax26/hyperliquid-trading-kit
+- Issues: https://github.com/maadmaax26/hyperliquid-trading-kit/issues
+- Hermes Docs: https://hermes-agent.nousresearch.com/docs
