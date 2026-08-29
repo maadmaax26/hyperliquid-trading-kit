@@ -1,0 +1,19 @@
+[Unit]
+Description=Hyperliquid Market Maker Bot
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=INSTALL_DIR/market-maker
+Environment="PATH=INSTALL_DIR/market-maker/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=INSTALL_DIR/market-maker/venv/bin/python mm_bot.py
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

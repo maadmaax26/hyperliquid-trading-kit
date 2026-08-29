@@ -1,0 +1,19 @@
+[Unit]
+Description=Hyperliquid Scalper Bot
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=INSTALL_DIR/scalper
+Environment="PATH=INSTALL_DIR/scalper/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=INSTALL_DIR/scalper/venv/bin/python main.py
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGTERM
+TimeoutStopSec=60
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Hyperliquid Combined Bot Status Report
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=INSTALL_DIR/market-maker
+Environment="PATH=INSTALL_DIR/market-maker/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=INSTALL_DIR/market-maker/venv/bin/python INSTALL_DIR/monitor/hl_status.py
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Hyperliquid Status Report Every 15 Minutes
+Requires=hl-status.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=hl-status.service
+
+[Install]
+WantedBy=timers.target

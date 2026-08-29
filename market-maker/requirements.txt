@@ -1,0 +1,4 @@
+# Market maker + simulator + monitor dependencies
+hyperliquid-python-sdk==0.24.0
+python-dotenv
+numpy

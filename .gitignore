@@ -1,0 +1,20 @@
+# Secrets — NEVER commit
+.env
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Runtime data
+monitor_equity_history.json
+monitor_alerts.log
+status_history.log
+trades.json
+
+# OS
+.DS_Store
+Thumbs.db
