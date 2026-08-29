@@ -253,15 +253,19 @@ class SignalEngine:
             short_factors.append(("EMA_BEAR", score, f"EMA bearish cross (ADX={adx:.0f})"))
         
         # AI ENHANCED: MACD signals for scalp (multi-confluence, ADX-aware)
+        # V6 FIX: MACD_MOM is now a SEPARATE if, not elif — fires alongside MACD_BULL
+        # as momentum confirmation. Previously elif made it dead code when MACD_BULL fired.
         if macd > macd_signal and macd_histogram > 0:
             score = 3 if is_trending else 2
             long_factors.append(("MACD_BULL", score, "MACD bullish cross + histogram"))
         elif macd < macd_signal and macd_histogram < 0:
             score = 3 if is_trending else 2
             short_factors.append(("MACD_BEAR", score, "MACD bearish cross + histogram"))
-        elif macd > 0 and macd > macd_signal:
+
+        # V6: MACD momentum as INDEPENDENT bonus factor (was elif — never fired with MACD_BULL)
+        if macd > 0 and macd > macd_signal and macd_histogram > 0:
             long_factors.append(("MACD_MOM", 2, "MACD positive momentum"))
-        elif macd < 0 and macd < macd_signal:
+        elif macd < 0 and macd < macd_signal and macd_histogram < 0:
             short_factors.append(("MACD_MOM", 2, "MACD negative momentum"))
         
         # Bollinger Band position (mean reversion — boosted in ranging markets, penalized in trends)
