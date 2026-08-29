@@ -821,6 +821,9 @@ class HyperliquidMarketMaker:
                     log.error("🛑 RISK LIMIT BREACHED — stopping bot")
                     break
 
+                # ── V6: Check if any positions need forced unwind ──
+                self._check_unwind_needed(equity)
+
                 # ── Update quotes for each asset ─────────────────────
                 for coin, cfg in self.config.assets.items():
                     if not self.running:

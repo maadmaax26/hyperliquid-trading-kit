@@ -785,11 +785,14 @@ class HyperliquidScalper:
 
     def _close_position_on_exchange(
         self, coin: str, tracked_pos: Optional[ActivePosition] = None,
+        use_limit: bool = False,
     ) -> Optional[Dict]:
         """Close a position by querying exchange for actual size and
-        sending a market order in the opposite direction.
+        sending an order in the opposite direction.
 
-        Bypasses the SDK's market_close() which breaks with API wallets.
+        V6: use_limit=True places a limit order at best bid/ask (maker fee)
+        instead of market order (taker fee). Used for trailing stop exits.
+        Emergency closes always use market for guaranteed fill.
         """
         exchange_pos = self._get_exchange_position(coin)
 
@@ -820,6 +823,33 @@ class HyperliquidScalper:
             return {"status": "ok", "note": "zero_size"}
 
         try:
+            if use_limit:
+                # V6: Place limit order at best bid/ask for maker fee
+                book = self.info.l2_snapshot(coin)
+                if (book and "levels" in book and len(book["levels"]) >= 2
+                        and book["levels"][0] and book["levels"][1]):
+                    best_bid = float(book["levels"][0][0]["px"])
+                    best_ask = float(book["levels"][1][0]["px"])
+                    # Close LONG → sell at best bid (maker)
+                    # Close SHORT → buy at best ask (maker)
+                    limit_price = best_bid if is_long else best_ask
+                    limit_price = float(self._round_price(limit_price, coin))
+                    log.info(f"📝 Limit close {coin} @ {limit_price} (maker)")
+                    result = self.exchange.order(
+                        coin, not is_long, close_size, limit_price,
+                        {"limit": {"tif": "Ioc"}},  # Immediate-or-Cancel
+                        reduce_only=True,
+                    )
+                    if result and result.get("status") == "ok":
+                        statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+                        if statuses and "filled" in statuses[0]:
+                            log.info(f"✅ Limit close filled for {coin} (maker)")
+                            return result
+                        # If not filled, fall through to market
+                        log.info(f"⏭️ Limit close not filled for {coin} — using market")
+                    # Fall through to market order
+                # No order book — use market
+
             result = self.exchange.market_open(
                 coin, not is_long, close_size, slippage=0.01,
             )
@@ -1715,7 +1745,8 @@ class HyperliquidScalper:
             if exit_reason:
                 order_ids = [pos.tp_order_id, pos.sl_order_id]
                 self._cancel_orders(coin, order_ids)
-                result = self._close_position_on_exchange(coin, pos)
+                # V6: Use limit order for trailing stop exits (maker fee 0.007% vs taker 0.035%)
+                result = self._close_position_on_exchange(coin, pos, use_limit=True)
                 if result is not None:
                     self._cancel_all_coin_orders(coin)
                     self.risk_mgr.close_position(coin, current_price, exit_reason, timeframe=pos.timeframe)

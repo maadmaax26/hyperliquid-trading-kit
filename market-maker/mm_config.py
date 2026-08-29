@@ -32,8 +32,8 @@ class MMAssetConfig:
 # ═══════════════════════════════════════════════════
 # ASSET CONFIGS — coins NOT traded by scalper bot
 # Scalper uses: BTC, ETH, SOL, XRP, ZEC, PAXG
-# MM bot uses: kPEPE, kBONK, ARB (no overlap = no conflicts)
-# Selected for widest spreads + best liquidity after fees
+# MM bot uses: kPEPE, ARB (no overlap = no conflicts)
+# kBONK removed V6: consistently losing (30% WR, adverse selection)
 # ═══════════════════════════════════════════════════
 
 KPEPE_MM = MMAssetConfig(
@@ -117,11 +117,10 @@ class MMConfig:
 
     # ── Assets (no overlap with scalper bot) ────────────────────────
     # kPEPE: best volume ($270K/5m) + depth ($848K), net +0.027%/round trip
-    # kBONK: widest profitable spread (0.033%), net +0.036%/round trip
+    # kBONK: REMOVED V6 — 30% WR, adverse selection, consistent losses
     # ARB: solid spread (0.023%), net +0.020%/round trip
     assets: Dict[str, MMAssetConfig] = field(default_factory=lambda: {
         "kPEPE": KPEPE_MM,
-        "kBONK": KBONK_MM,
         "ARB": ARB_MM,
     })
 
