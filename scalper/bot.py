@@ -1395,10 +1395,15 @@ class HyperliquidScalper:
         # ── V5: 1h trend filter — skip strongly counter-trend scalps ──
         # V6.1 FIX: Swing indicators were never fetched because swing is disabled.
         # This made the 1h trend filter silently dead code. Now fetch 1h data directly.
+        # V6.1 FIX 2: Fail SAFE — if 1h data can't be fetched, DON'T TRADE (was fail-open)
         swing_indicators = self.cached_swing_indicators.get(f"{coin}_swing")
         if not swing_indicators:
             # V6.1: Fetch 1h candles directly for trend filter (swing may be disabled)
             swing_indicators = self._fetch_swing_candles(coin)
+        if not swing_indicators:
+            # V6.1: Fail SAFE — no 1h trend data = no trade (was silently bypassing filter)
+            log.warning(f"⚠️ {coin} [SCALP] Cannot fetch 1h trend data — skipping (fail-safe)")
+            return
         if swing_indicators:
             try:
                 swing_ema50_arr = swing_indicators['ema_50'] if 'ema_50' in swing_indicators else None
