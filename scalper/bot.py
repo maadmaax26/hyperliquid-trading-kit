@@ -307,6 +307,28 @@ class HyperliquidScalper:
                     f"{tp_str} | {sl_str}"
                 )
 
+                # V6.3 FIX: If SL/TP orders were NOT found on exchange, PLACE THEM NOW
+                if not sl_order_id:
+                    new_sl_oid = self._place_trigger_order(
+                        coin, not is_long, float(abs_size),
+                        float(sl_price), "sl"
+                    )
+                    if new_sl_oid:
+                        pos.sl_order_id = new_sl_oid
+                        log.info(f"📌 {coin}: SL placed for recovered position @ ${sl_price:.2f} (oid={new_sl_oid})")
+                    else:
+                        log.error(f"❌ {coin}: FAILED to place SL for recovered position!")
+                if not tp_order_id:
+                    new_tp_oid = self._place_trigger_order(
+                        coin, not is_long, float(abs_size),
+                        float(tp_price), "tp"
+                    )
+                    if new_tp_oid:
+                        pos.tp_order_id = new_tp_oid
+                        log.info(f"📌 {coin}: TP placed for recovered position @ ${tp_price:.2f} (oid={new_tp_oid})")
+                    else:
+                        log.error(f"❌ {coin}: FAILED to place TP for recovered position!")
+
             if recovered:
                 log.info(f"♻️ Recovered {recovered} position(s) from exchange")
             else:
@@ -323,9 +345,9 @@ class HyperliquidScalper:
         """Get account equity."""
         try:
             state = self.info.user_state(self.address)
-            margin = state.get("crossMarginSummary", {})
-            if not margin:
-                margin = state.get("marginSummary", {})
+            # V6.2 FIX: Use marginSummary (total) not crossMarginSummary (cross only)
+            # marginSummary includes both cross and isolated margin positions
+            margin = state.get("marginSummary", {})
             equity = float(margin.get("accountValue", 0))
             if equity == 0:
                 equity = float(state.get("withdrawable", 0))
@@ -941,7 +963,11 @@ class HyperliquidScalper:
             return None
 
     def _verify_all_sl_orders(self):
-        """Verify all SL orders are still active on exchange."""
+        """Verify all SL orders are still active on exchange.
+        
+        V6.3: If SL order is missing, RE-PLACE it immediately.
+        Previously only warned — now actively re-places missing SLs.
+        """
         if not self.risk_mgr.active_positions:
             return
 
@@ -956,8 +982,19 @@ class HyperliquidScalper:
 
         for pos_key, pos in list(self.risk_mgr.active_positions.items()):
             verified = self.risk_mgr.verify_sl_orders(pos.coin, open_orders, timeframe=pos.timeframe)
-            if not verified and pos.sl_order_id:
-                log.warning(f"⚠️ {pos.coin}: SL order {pos.sl_order_id} not verified - will monitor closely")
+            if not verified:
+                # V6.3: SL order is missing — re-place it NOW
+                log.warning(f"🚨 {pos.coin}: SL order missing! Re-placing SL @ ${pos.sl_price:.2f}")
+                is_long = pos.direction == "LONG"
+                new_sl_oid = self._place_trigger_order(
+                    pos.coin, not is_long, float(pos.size),
+                    float(pos.sl_price), "sl"
+                )
+                if new_sl_oid:
+                    pos.sl_order_id = new_sl_oid
+                    log.info(f"✅ {pos.coin}: SL re-placed @ ${pos.sl_price:.2f} (oid={new_sl_oid})")
+                else:
+                    log.error(f"❌ {pos.coin}: FAILED to re-place SL! Position unprotected!")
 
     def _cancel_orders(self, coin: str, order_ids: list):
         """Cancel specific orders."""
@@ -1193,6 +1230,112 @@ class HyperliquidScalper:
 
         except Exception as e:
             log.error(f"Failed to sync positions: {e}")
+
+    def _detect_orphaned_positions(self):
+        """V6.3 SAFETY NET: Detect exchange positions the bot isn't tracking.
+        
+        These are 'orphaned' positions — opened by a previous bot run, or lost
+        during a restart. They have NO SL/TP orders protecting them.
+        
+        For each orphan:
+        1. If it's a coin we trade, register it + place SL/TP immediately
+        2. If it's a coin we don't trade (MM bot's coin), skip it
+        3. Log a WARNING so we know about it
+        """
+        try:
+            exchange_positions = self._get_all_exchange_positions()
+            if not exchange_positions:
+                return
+
+            # Get all coins the bot is currently tracking
+            tracked_coins = set()
+            for pos_key, pos in self.risk_mgr.positions.items():
+                tracked_coins.add(pos.coin)
+
+            # Find orphans: on exchange but not tracked
+            for coin, exch_pos in exchange_positions.items():
+                if coin in tracked_coins:
+                    continue  # Bot is managing this one
+                if coin not in self.config.assets:
+                    continue  # MM bot's coin (XMR, TAO) — not our problem
+
+                # ORPHANED POSITION DETECTED
+                size = exch_pos["size"]
+                szi = exch_pos["szi"]
+                entry = exch_pos["entry_price"]
+                direction = exch_pos["direction"]
+                is_long = direction == "LONG"
+                uPnL = exch_pos.get("unrealized_pnl", 0)
+
+                log.warning(
+                    f"🚨 ORPHANED POSITION: {coin} {direction} "
+                    f"size={size} @ ${entry:.2f} uPnL=${uPnL:.2f} — "
+                    f"NOT tracked by bot, NO SL/TP! Recovering..."
+                )
+
+                # Place SL/TP orders based on config for this coin
+                asset_cfg = self.config.assets[coin]
+                sl_pct = asset_cfg.stop_loss_pct
+                tp_pct = asset_cfg.take_profit_pct
+
+                # Use ATR-based SL/TP if available, otherwise config %
+                indicators = self.cached_indicators.get(
+                    f"{coin}_{self.config.candle_interval}"
+                )
+                if indicators and indicators.atr > 0:
+                    atr_pct = indicators.atr / entry
+                    sl_pct = min(atr_pct * 1.5, sl_pct * 2)
+                    tp_pct = min(atr_pct * 2.0, tp_pct * 2)
+
+                if is_long:
+                    sl_price = entry * (1 - sl_pct)
+                    tp_price = entry * (1 + tp_pct)
+                else:
+                    sl_price = entry * (1 + sl_pct)
+                    tp_price = entry * (1 - tp_pct)
+
+                sl_price = self._round_price(sl_price, coin)
+                tp_price = self._round_price(tp_price, coin)
+
+                # Place SL order
+                sl_oid = self._place_trigger_order(
+                    coin, not is_long, float(size), float(sl_price), "sl"
+                )
+                # Place TP order
+                tp_oid = self._place_trigger_order(
+                    coin, not is_long, float(size), float(tp_price), "tp"
+                )
+
+                if sl_oid or tp_oid:
+                    # Register with risk manager
+                    from risk_manager_v5 import Position
+                    pos = Position(
+                        coin=coin,
+                        direction=direction,
+                        size=size,
+                        entry_price=entry,
+                        sl_price=sl_price,
+                        tp_price=tp_price,
+                        sl_order_id=sl_oid,
+                        tp_order_id=tp_oid,
+                        strategy="SCALP",
+                        timeframe="5m",
+                        entry_time=time.time(),
+                    )
+                    self.risk_mgr.register_position(pos)
+
+                    log.info(
+                        f"✅ RECOVERED orphaned {coin} {direction}: "
+                        f"SL=${sl_price:.2f} TP=${tp_price:.2f}"
+                    )
+                else:
+                    log.error(
+                        f"❌ FAILED to place SL/TP for orphaned {coin} — "
+                        f"position remains UNPROTECTED!"
+                    )
+
+        except Exception as e:
+            log.error(f"Failed to detect orphaned positions: {e}")
 
     # ════════════════════════════════════════════════════════════════
     # SHARED ENTRY FINALIZATION
@@ -1979,6 +2122,7 @@ class HyperliquidScalper:
                     continue
 
                 self._sync_exchange_positions()
+                self._detect_orphaned_positions()  # V6.3: recover untracked positions with SL/TP
                 self._manage_positions()
                 
                 # ── Periodic SL Verification (every 5 cycles) ─────────────
