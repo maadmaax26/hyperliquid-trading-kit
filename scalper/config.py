@@ -304,7 +304,7 @@ class BotConfig:
         "SOL": replace(SOL_CONFIG, min_signal_score=9),     # V5: Re-enabled at 9 (was disabled at 20, backtest shows +$49 at 53% WR)
         "XRP": XRP_CONFIG,                                  # ACTIVE SCALP (Best performer)
         "ZEC": ZEC_CONFIG,                                   # ACTIVE SCALP (tuned for ZEC volatility)
-        "PAXG": replace(PAXG_CONFIG, min_signal_score=20),  # Disabled scalp (low volatility)
+        "PAXG": replace(PAXG_CONFIG, min_signal_score=99),  # V6.1: DISABLED — low volatility, not profitable
     })
 
     swing_assets: Dict[str, SwingConfig] = field(default_factory=lambda: {
