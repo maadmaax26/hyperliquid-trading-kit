@@ -6,6 +6,12 @@ Strategy: Place simultaneous bid/ask limit orders around mid price.
 Capture spread + maker rebate (0.003%) on both sides.
 Use ADX to widen spreads in trends, tighten in ranges.
 Manage inventory with skew and mean-reversion unwind.
+
+V6.2: Switched from kPEPE to XMR + TAO based on L2 spread analysis.
+  - XMR: 0.0443% spread, $53M vol, $17K depth — 277x better MM score than kPEPE
+  - TAO: 0.0334% spread, $8.6M vol, $5.9K depth — 119x better MM score than kPEPE
+  - kPEPE removed: $296K depth = too much competition, low fill share
+  - Both XMR/TAO: max 5x leverage, 3 sz decimals
 """
 import os
 from dataclasses import dataclass, field
@@ -31,44 +37,51 @@ class MMAssetConfig:
 
 # ═══════════════════════════════════════════════════
 # ASSET CONFIGS — coins NOT traded by scalper bot
-# Scalper uses: BTC, ETH, SOL, XRP, ZEC, PAXG
-# MM bot uses: kPEPE, ARB (no overlap = no conflicts)
-# kBONK removed V6: consistently losing (30% WR, adverse selection)
+# Scalper uses: BTC, ETH, SOL, XRP, ZEC (PAXG disabled)
+# MM bot uses: XMR, TAO (no overlap = no conflicts)
+#
+# V6.2 CHANGES:
+#   - kPEPE REMOVED: $296K depth = too much competition, low fill share, MM score 0.0002
+#   - XMR ADDED: 0.0443% spread, $53M vol, $17K depth — MM score 0.0650 (277x better)
+#   - TAO ADDED: 0.0334% spread, $8.6M vol, $5.9K depth — MM score 0.0280 (119x better)
+#   - Both max 5x leverage (HL limit), 3 sz decimals
+#   - Order size 3% × 5x = $17.88 notional at $119 equity (above $10 min)
 # ═══════════════════════════════════════════════════
 
+XMR_MM = MMAssetConfig(
+    coin="XMR",
+    order_size_pct=0.03,           # 3% equity per order — $17.88 notional at 5x, above $10 min
+    spread_pct=0.0015,             # 0.15% half-spread (raw spread 0.044%, net edge +0.030%/RT)
+    min_spread_pct=0.0006,         # 0.06% floor — never quote tighter than this
+    max_spread_pct=0.0050,         # 0.50% ceiling — in extreme trends, widen up to this
+    max_inventory_pct=0.20,        # 20% max position — same as V6.1 kPEPE
+    inventory_skew_factor=0.6,     # Skew quotes 60% based on inventory direction
+    leverage=5,                    # HL max for XMR = 5x
+    min_order_notional=10.0,
+)
+
+TAO_MM = MMAssetConfig(
+    coin="TAO",
+    order_size_pct=0.03,           # 3% equity per order — $17.88 notional at 5x, above $10 min
+    spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.033%, net edge +0.019%/RT)
+    min_spread_pct=0.0005,         # 0.05% floor
+    max_spread_pct=0.0045,         # 0.45% ceiling
+    max_inventory_pct=0.20,        # 20% max position
+    inventory_skew_factor=0.6,
+    leverage=5,                    # HL max for TAO = 5x
+    min_order_notional=10.0,
+)
+
+# Kept for reference but NOT active
 KPEPE_MM = MMAssetConfig(
     coin="kPEPE",
-    order_size_pct=0.02,           # V6.1: 4%→2% — was causing rapid inventory buildup and forced unwind
-    spread_pct=0.0010,             # 0.10% half-spread (raw spread 0.027%, net +0.027%)
+    order_size_pct=0.03,
+    spread_pct=0.0010,
     min_spread_pct=0.0004,
     max_spread_pct=0.0040,
-    max_inventory_pct=0.20,        # V6.1: 12%→20% — give more room before forced unwind
+    max_inventory_pct=0.20,
     inventory_skew_factor=0.6,
-    leverage=3,
-    min_order_notional=10.0,
-)
-
-KBONK_MM = MMAssetConfig(
-    coin="kBONK",
-    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
-    spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.033%, net +0.036%)
-    min_spread_pct=0.0005,
-    max_spread_pct=0.0045,
-    max_inventory_pct=0.12,        # 12% per asset (36% total across 3 assets)
-    inventory_skew_factor=0.6,
-    leverage=3,
-    min_order_notional=10.0,
-)
-
-ARB_MM = MMAssetConfig(
-    coin="ARB",
-    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
-    spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.023%, net +0.020%)
-    min_spread_pct=0.0005,
-    max_spread_pct=0.0040,
-    max_inventory_pct=0.12,        # 12% per asset (36% total across 3 assets)
-    inventory_skew_factor=0.6,
-    leverage=3,
+    leverage=6,
     min_order_notional=10.0,
 )
 
@@ -81,7 +94,7 @@ class MMConfig:
     private_key: str = os.getenv("HL_PRIVATE_KEY")
     parent_address: str = os.getenv(
         "HL_PARENT_ADDRESS",
-        "0x95d5C0D037fFd7868c5E36518bE474d8BBC457fe",
+        "0xYOUR_PARENT_WALLET_ADDRESS",
     )
     sub_account_address: str = os.getenv("HL_SUB_ACCOUNT", "")  # Empty = run on parent
     use_mainnet: bool = os.getenv("USE_MAINNET", "false").lower() in ("true", "1", "yes")
@@ -116,11 +129,13 @@ class MMConfig:
     max_hold_minutes: int = 120             # Force unwind positions older than this
 
     # ── Assets (no overlap with scalper bot) ────────────────────────
-    # kPEPE: best volume ($270K/5m) + depth ($848K), net +0.027%/round trip, 78% WR
-    # kBONK: REMOVED V6 — 30% WR, adverse selection, consistent losses
-    # ARB: REMOVED V6.1 — 33% WR, -$0.50/24h, adverse selection
+    # V6.2: XMR + TAO replace kPEPE
+    # XMR: 0.0443% spread, $53M vol, $17K depth — 277x better MM score than kPEPE
+    # TAO: 0.0334% spread, $8.6M vol, $5.9K depth — 119x better MM score than kPEPE
+    # kPEPE removed: $296K depth = too much competition, low fill share
     assets: Dict[str, MMAssetConfig] = field(default_factory=lambda: {
-        "kPEPE": KPEPE_MM,
+        "XMR": XMR_MM,
+        "TAO": TAO_MM,
     })
 
     # ── Logging ─────────────────────────────────────────────────────
