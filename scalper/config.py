@@ -81,12 +81,12 @@ class SwingConfig:
 
 BTC_CONFIG = AssetConfig(
     coin="BTC",
-    take_profit_pct=0.0032,         # V6: 0.21%→0.32% (1.5x) — fees were 33% of TP, now 22%. BE WR 70%→57%
+    take_profit_pct=0.0032,         # V6: 0.21%→0.32% (1.5x) — fees 33%→19% of TP. BE WR 67%→57%
     stop_loss_pct=0.0025,           # Keep 0.25% SL
     trailing_activate_pct=0.0023,   # V6: 0.15%→0.23% — activate later (matches wider TP)
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail for bigger moves
     position_size_pct=0.25,         # V6: 35%→25% equal sizing, max 5 positions
-    min_signal_score=10,
+    min_signal_score=12,            # V6.1: 10→12 — filter marginal signals, only 4+ factor confluence
     cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
@@ -98,7 +98,7 @@ ETH_CONFIG = AssetConfig(
     trailing_activate_pct=0.0025,   # V6: 0.17%→0.25% — activate later
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail
     position_size_pct=0.25,         # V6: 30%→25% equal sizing
-    min_signal_score=10,
+    min_signal_score=12,            # V6.1: 10→12 — filter marginal signals
     cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
@@ -122,7 +122,7 @@ XRP_CONFIG = AssetConfig(
     trailing_activate_pct=0.0025,   # V6: 0.17%→0.25% — activate later
     trailing_stop_pct=0.0006,       # V6: 0.04%→0.06% — slightly wider trail
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
-    min_signal_score=10,
+    min_signal_score=12,            # V6.1: 10→12 — filter marginal signals
     cooldown_seconds=300,           # V6.1: 120→300 — reduce churning/fees
     max_spread_pct=0.001,
 )
@@ -146,7 +146,7 @@ ZEC_CONFIG = AssetConfig(
     trailing_activate_pct=0.0030,   # V6: 0.20%→0.30% — activate later
     trailing_stop_pct=0.0015,       # V6.1: 0.09%→0.15% (0.5 ATR) — wider trail for trend moves
     position_size_pct=0.25,         # V6: 20%→25% equal sizing
-    min_signal_score=10,            # V6.1: RE-ENABLED (was 99/disabled) — trend filter now works
+    min_signal_score=12,            # V6.1: 10→12 — filter marginal signals (RE-ENABLED with trend filter)
     cooldown_seconds=300,           # V6.1: 180→300 — reduce churning/fees
     max_spread_pct=0.002,           # ZEC spreads tend to be wider than BTC/ETH
 )
@@ -301,7 +301,7 @@ class BotConfig:
     assets: Dict[str, AssetConfig] = field(default_factory=lambda: {
         "BTC": BTC_CONFIG,                                  # ACTIVE SCALP
         "ETH": ETH_CONFIG,                                  # ACTIVE SCALP
-        "SOL": replace(SOL_CONFIG, min_signal_score=9),     # V5: Re-enabled at 9 (was disabled at 20, backtest shows +$49 at 53% WR)
+        "SOL": replace(SOL_CONFIG, min_signal_score=11),    # V6.1: 9→11 — SOL has lower WR, needs high bar but not as strict as 12
         "XRP": XRP_CONFIG,                                  # ACTIVE SCALP (Best performer)
         "ZEC": ZEC_CONFIG,                                   # ACTIVE SCALP (tuned for ZEC volatility)
         "PAXG": replace(PAXG_CONFIG, min_signal_score=99),  # V6.1: DISABLED — low volatility, not profitable

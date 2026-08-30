@@ -180,7 +180,7 @@ class SignalEngine:
             return Signal(
                 direction=Direction.NONE,
                 score=0,
-                max_score=10,
+                max_score=12,
                 strategy="NONE",
                 timeframe="5m",
                 reasons=["No signal"]
@@ -197,7 +197,7 @@ class SignalEngine:
             return Signal(
                 direction=Direction.NONE,
                 score=0,
-                max_score=10,
+                max_score=12,
                 strategy="NONE", 
                 timeframe="30m",
                 reasons=["No swing signal"]
@@ -286,26 +286,26 @@ class SignalEngine:
         # AI ENHANCED: Require minimum 2 confluence factors for entry
         # This filters out weak single-indicator signals
         if len(long_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in long_factors))
+            total_score = min(12, 5 + sum(f[1] for f in long_factors))
             reasons = [f[2] for f in long_factors]
             strategy_names = "+".join(f[0] for f in long_factors[:3])
             signals.append(Signal(
                 direction=Direction.LONG,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"MULTI_CONFLUENCE:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
             ))
         
         if len(short_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in short_factors))
+            total_score = min(12, 5 + sum(f[1] for f in short_factors))
             reasons = [f[2] for f in short_factors]
             strategy_names = "+".join(f[0] for f in short_factors[:3])
             signals.append(Signal(
                 direction=Direction.SHORT,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"MULTI_CONFLUENCE:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
@@ -400,26 +400,26 @@ class SignalEngine:
         
         # Require 2+ factors for entry (same threshold as confluence signals)
         if len(long_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in long_factors))
+            total_score = min(12, 5 + sum(f[1] for f in long_factors))
             reasons = [f[2] for f in long_factors]
             strategy_names = "+".join(f[0] for f in long_factors[:3])
             signals.append(Signal(
                 direction=Direction.LONG,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"MOMENTUM:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
             ))
         
         if len(short_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in short_factors))
+            total_score = min(12, 5 + sum(f[1] for f in short_factors))
             reasons = [f[2] for f in short_factors]
             strategy_names = "+".join(f[0] for f in short_factors[:3])
             signals.append(Signal(
                 direction=Direction.SHORT,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"MOMENTUM:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
@@ -499,26 +499,26 @@ class SignalEngine:
 
         # Require minimum 2 confluence factors for swing entry
         if len(long_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in long_factors))
+            total_score = min(12, 5 + sum(f[1] for f in long_factors))
             reasons = [f[2] for f in long_factors]
             strategy_names = "+".join(f[0] for f in long_factors[:3])
             signals.append(Signal(
                 direction=Direction.LONG,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"SWING_CONFLUENCE:{strategy_names}",
                 timeframe="30m",
                 reasons=reasons
             ))
 
         if len(short_factors) >= 2:
-            total_score = min(10, 5 + sum(f[1] for f in short_factors))
+            total_score = min(12, 5 + sum(f[1] for f in short_factors))
             reasons = [f[2] for f in short_factors]
             strategy_names = "+".join(f[0] for f in short_factors[:3])
             signals.append(Signal(
                 direction=Direction.SHORT,
                 score=total_score,
-                max_score=10,
+                max_score=12,
                 strategy=f"SWING_CONFLUENCE:{strategy_names}",
                 timeframe="30m",
                 reasons=reasons

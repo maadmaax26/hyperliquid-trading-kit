@@ -38,11 +38,11 @@ class MMAssetConfig:
 
 KPEPE_MM = MMAssetConfig(
     coin="kPEPE",
-    order_size_pct=0.04,           # 4% equity — ensures >$10 min notional at 3x lev even at $80 equity
+    order_size_pct=0.02,           # V6.1: 4%→2% — was causing rapid inventory buildup and forced unwind
     spread_pct=0.0010,             # 0.10% half-spread (raw spread 0.027%, net +0.027%)
     min_spread_pct=0.0004,
     max_spread_pct=0.0040,
-    max_inventory_pct=0.12,        # 12% per asset (36% total across 3 assets)
+    max_inventory_pct=0.20,        # V6.1: 12%→20% — give more room before forced unwind
     inventory_skew_factor=0.6,
     leverage=3,
     min_order_notional=10.0,
@@ -81,7 +81,7 @@ class MMConfig:
     private_key: str = os.getenv("HL_PRIVATE_KEY")
     parent_address: str = os.getenv(
         "HL_PARENT_ADDRESS",
-        "0xYOUR_PARENT_WALLET_ADDRESS",
+        "0x95d5C0D037fFd7868c5E36518bE474d8BBC457fe",
     )
     sub_account_address: str = os.getenv("HL_SUB_ACCOUNT", "")  # Empty = run on parent
     use_mainnet: bool = os.getenv("USE_MAINNET", "false").lower() in ("true", "1", "yes")
