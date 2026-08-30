@@ -175,7 +175,17 @@ class SignalEngine:
         momentum_signals = self._generate_momentum_signals(indicators)
         signals.extend(momentum_signals)
         
-        # Return highest scored signal, or NONE if no signals
+        # ══════════════════════════════════════════════════════════════
+        # V6.1 TIER 2: EMA PULLBACK — trend continuation on pullback
+        # Enters when price pulls back to 21 EMA in an established trend
+        # Higher WR than crossover entries (waits for retest, not chasing)
+        # ══════════════════════════════════════════════════════════════
+        pullback_signals = self._generate_pullback_signals(indicators)
+        signals.extend(pullback_signals)
+        
+        # V6.1 TIER 2: MULTI-STRATEGY VOTING — require 2+ independent strategies to agree
+        # Ultra-scalping-bot's key insight: only trade when multiple strategies agree
+        # This filters out single-strategy false signals
         if not signals:
             return Signal(
                 direction=Direction.NONE,
@@ -186,9 +196,43 @@ class SignalEngine:
                 reasons=["No signal"]
             )
         
-        # Return best signal (highest score)
-        best = max(signals, key=lambda x: x.score)
-        return best
+        # Count how many strategies say LONG vs SHORT
+        long_signals = [s for s in signals if s.direction == Direction.LONG]
+        short_signals = [s for s in signals if s.direction == Direction.SHORT]
+        
+        # VOTING: require 2+ strategies agreeing on direction
+        # If only 1 strategy fires, it's a weak signal — skip
+        # Exception: high-score single signal (score >= 11) can still trade alone
+        VOTE_THRESHOLD = 2
+        SINGLE_SIGNAL_EXCEPTION = 11  # Very strong single signal can trade alone
+        
+        if len(long_signals) >= VOTE_THRESHOLD:
+            best = max(long_signals, key=lambda x: x.score)
+            best.reasons.append(f"VOTE: {len(long_signals)} strategies agree LONG")
+            return best
+        elif len(short_signals) >= VOTE_THRESHOLD:
+            best = max(short_signals, key=lambda x: x.score)
+            best.reasons.append(f"VOTE: {len(short_signals)} strategies agree SHORT")
+            return best
+        elif long_signals and long_signals[0].score >= SINGLE_SIGNAL_EXCEPTION:
+            best = max(long_signals, key=lambda x: x.score)
+            best.reasons.append(f"SINGLE: score {best.score} >= {SINGLE_SIGNAL_EXCEPTION} (exception)")
+            return best
+        elif short_signals and short_signals[0].score >= SINGLE_SIGNAL_EXCEPTION:
+            best = max(short_signals, key=lambda x: x.score)
+            best.reasons.append(f"SINGLE: score {best.score} >= {SINGLE_SIGNAL_EXCEPTION} (exception)")
+            return best
+        else:
+            # No voting agreement and no strong single signal
+            best_score = max(s.score for s in signals) if signals else 0
+            return Signal(
+                direction=Direction.NONE,
+                score=best_score,
+                max_score=12,
+                strategy="VOTE_BLOCKED",
+                timeframe="5m",
+                reasons=[f"Vote blocked: {len(long_signals)}L/{len(short_signals)}S, max score {best_score}"]
+            )
     
     def evaluate_swing(self, indicators_30m, indicators_5m, swing_config) -> Optional[Signal]:
         """Evaluate 30m swing signals."""
@@ -212,6 +256,7 @@ class SignalEngine:
           - ADX > 25: favor trend-follow signals (EMA cross, MACD momentum)
           - ADX < 20: favor mean-reversion signals (BB, RSI extremes)
           - ADX 20-25: neutral, allow both
+        V6.1 TIER 1: Volume gate (HARD GATE) + RSI extreme block (HARD GATE)
         """
         signals = []
         
@@ -226,6 +271,13 @@ class SignalEngine:
         volume_ratio = data.get('volume_ratio', 1.0) if hasattr(data, 'get') else 1.0
         adx = data.get('adx', 0) if hasattr(data, 'get') else 0
         
+        # ── V6.1 TIER 1: VOLUME GATE (HARD GATE) ──
+        # Every top scalping bot requires volume > 1.3x average.
+        # Low volume = noise = false signals. Block all signals when volume is low.
+        VOLUME_GATE = 1.3
+        if volume_ratio < VOLUME_GATE:
+            return signals  # No signals generated when volume is below gate
+        
         # ADX regime classification
         is_trending = adx > 25
         is_ranging = adx < 20
@@ -233,6 +285,12 @@ class SignalEngine:
         # Track confluence factors
         long_factors = []
         short_factors = []
+        
+        # ── V6.1 TIER 1: RSI EXTREME BLOCK (HARD GATE) ──
+        # Block LONG when RSI > 72 (buying the top), block SHORT when RSI < 28 (selling the bottom)
+        # These are HARD blocks — no score, no entry, period.
+        RSI_LONG_BLOCK = 72   # No LONG if RSI > this
+        RSI_SHORT_BLOCK = 28  # No SHORT if RSI < this
         
         # RSI signals
         if rsi < 30:
@@ -283,6 +341,12 @@ class SignalEngine:
             if short_factors:
                 short_factors.append(("VOL_CONFIRM", 1, "High volume confirm"))
         
+        # V6.1 TIER 1: RSI extreme block — remove LONG factors if RSI > 72, SHORT if RSI < 28
+        if rsi > RSI_LONG_BLOCK:
+            long_factors = []  # Block LONG — too overbought
+        if rsi < RSI_SHORT_BLOCK:
+            short_factors = []  # Block SHORT — too oversold
+        
         # AI ENHANCED: Require minimum 2 confluence factors for entry
         # This filters out weak single-indicator signals
         if len(long_factors) >= 2:
@@ -326,6 +390,8 @@ class SignalEngine:
         Key difference from confluence signals: these use momentum continuation,
         not reversal. RSI >60 is treated as bullish confirmation (strong momentum),
         not as an overbought short signal.
+        
+        V6.1 TIER 1: Volume gate + RSI extreme block applied to momentum signals too.
         """
         signals = []
         
@@ -340,9 +406,20 @@ class SignalEngine:
         adx = data.get('adx', 0) if hasattr(data, 'get') else 0
         bb_position = data.get('bb_position', 0.5) if hasattr(data, 'get') else 0.5
         
+        # ── V6.1 TIER 1: VOLUME GATE (HARD GATE) ──
+        VOLUME_GATE = 1.3
+        if volume_ratio < VOLUME_GATE:
+            return signals
+        
         # Need ADX > 25 to confirm trending market
         if adx < 25:
             return signals
+        
+        # ── V6.1 TIER 1: RSI EXTREME BLOCK (HARD GATE) ──
+        # In momentum mode, block LONG if RSI > 80 (extreme overbought even in trend)
+        # Block SHORT if RSI < 20 (extreme oversold even in downtrend)
+        RSI_LONG_EXTREME = 80   # Momentum LONG allowed up to 80 (trend can stay overbought)
+        RSI_SHORT_EXTREME = 20  # Momentum SHORT allowed down to 20
         
         long_factors = []
         short_factors = []
@@ -398,6 +475,12 @@ class SignalEngine:
             if bb_position < 0.3:
                 short_factors.append(("MOM_BB_LOWER", 1, "Price riding BB lower — trend strength"))
         
+        # V6.1 TIER 1: RSI extreme block for momentum signals
+        if rsi > RSI_LONG_EXTREME:
+            long_factors = []  # Block LONG — extremely overbought even for momentum
+        if rsi < RSI_SHORT_EXTREME:
+            short_factors = []  # Block SHORT — extremely oversold even for momentum
+        
         # Require 2+ factors for entry (same threshold as confluence signals)
         if len(long_factors) >= 2:
             total_score = min(12, 5 + sum(f[1] for f in long_factors))
@@ -421,6 +504,108 @@ class SignalEngine:
                 score=total_score,
                 max_score=12,
                 strategy=f"MOMENTUM:{strategy_names}",
+                timeframe="5m",
+                reasons=reasons
+            ))
+        
+        return signals
+    
+    def _generate_pullback_signals(self, data: Dict) -> List[Signal]:
+        """V6.1 TIER 2: EMA pullback entry — trend continuation on pullback to 21 EMA.
+        
+        Enters when price pulls back to near the 21 EMA while the trend is still intact
+        (EMA9 > EMA21 > EMA50 for LONG, reverse for SHORT). This is a higher-probability
+        entry than chasing crossovers — it waits for a retest of the mean in a trend.
+        
+        LONG: EMA9 > EMA21 (trend up) + price near 21 EMA (pullback) + RSI 40-65 (not overbought)
+        SHORT: EMA9 < EMA21 (trend down) + price near 21 EMA (pullback) + RSI 35-60 (not oversold)
+        """
+        signals = []
+        
+        rsi = data.get('rsi_14', 50) if hasattr(data, 'get') else 50
+        ema_fast = data.get('ema_9', 0) if hasattr(data, 'get') else 0
+        ema_slow = data.get('ema_21', 0) if hasattr(data, 'get') else 0
+        ema_50 = data.get('ema_50', 0) if hasattr(data, 'get') else 0
+        volume_ratio = data.get('volume_ratio', 1.0) if hasattr(data, 'get') else 1.0
+        adx = data.get('adx', 0) if hasattr(data, 'get') else 0
+        bb_position = data.get('bb_position', 0.5) if hasattr(data, 'get') else 0.5
+        
+        # Volume gate (same as other strategies)
+        if volume_ratio < 1.3:
+            return signals
+        
+        # Need some trend (ADX > 20)
+        if adx < 20:
+            return signals
+        
+        # Get current price from bb_position or raw close
+        # We need to estimate distance from 21 EMA
+        # ema_slow IS the 21 EMA. Price is near it if bb_position is mid-range
+        # Use EMA proximity: price within 0.3% of 21 EMA = pullback zone
+        PULLBACK_THRESHOLD = 0.003  # 0.3% from 21 EMA
+        
+        long_factors = []
+        short_factors = []
+        
+        # ── LONG pullback: uptrend + price pulled back to 21 EMA ──
+        if ema_fast > ema_slow and ema_slow > (ema_50 if ema_50 else 0):
+            # Bullish EMA stack (9 > 21 > 50) — confirmed uptrend
+            # Check if price is near 21 EMA (pullback zone)
+            # bb_position near 0.5 = price at middle of BB = near EMA
+            if 0.3 < bb_position < 0.7:
+                long_factors.append(("PB_EMA_TOUCH", 3, f"Price pulled back to 21 EMA (BB={bb_position:.2f})"))
+                long_factors.append(("PB_TREND_UP", 3, f"EMA9>EMA21>EMA50 bullish stack (ADX={adx:.0f})"))
+                
+                if 40 < rsi < 65:
+                    long_factors.append(("PB_RSI_OK", 2, f"RSI in healthy zone ({rsi:.0f})"))
+                elif rsi >= 72:
+                    long_factors = []  # Block — too overbought even for pullback
+                else:
+                    long_factors.append(("PB_RSI_WEAK", 1, f"RSI neutral ({rsi:.0f})"))
+                
+                if volume_ratio > 1.5:
+                    long_factors.append(("PB_VOL", 1, f"Volume spike {volume_ratio:.1f}x"))
+        
+        # ── SHORT pullback: downtrend + price pulled back to 21 EMA ──
+        elif ema_fast < ema_slow and ema_slow < (ema_50 if ema_50 else float('inf')):
+            # Bearish EMA stack (9 < 21 < 50) — confirmed downtrend
+            if 0.3 < bb_position < 0.7:
+                short_factors.append(("PB_EMA_TOUCH", 3, f"Price pulled back to 21 EMA (BB={bb_position:.2f})"))
+                short_factors.append(("PB_TREND_DN", 3, f"EMA9<EMA21<EMA50 bearish stack (ADX={adx:.0f})"))
+                
+                if 35 < rsi < 60:
+                    short_factors.append(("PB_RSI_OK", 2, f"RSI in healthy zone ({rsi:.0f})"))
+                elif rsi <= 28:
+                    short_factors = []  # Block — too oversold even for pullback
+                else:
+                    short_factors.append(("PB_RSI_WEAK", 1, f"RSI neutral ({rsi:.0f})"))
+                
+                if volume_ratio > 1.5:
+                    short_factors.append(("PB_VOL", 1, f"Volume spike {volume_ratio:.1f}x"))
+        
+        # Require 2+ factors
+        if len(long_factors) >= 2:
+            total_score = min(12, 5 + sum(f[1] for f in long_factors))
+            reasons = [f[2] for f in long_factors]
+            strategy_names = "+".join(f[0] for f in long_factors[:3])
+            signals.append(Signal(
+                direction=Direction.LONG,
+                score=total_score,
+                max_score=12,
+                strategy=f"PULLBACK:{strategy_names}",
+                timeframe="5m",
+                reasons=reasons
+            ))
+        
+        if len(short_factors) >= 2:
+            total_score = min(12, 5 + sum(f[1] for f in short_factors))
+            reasons = [f[2] for f in short_factors]
+            strategy_names = "+".join(f[0] for f in short_factors[:3])
+            signals.append(Signal(
+                direction=Direction.SHORT,
+                score=total_score,
+                max_score=12,
+                strategy=f"PULLBACK:{strategy_names}",
                 timeframe="5m",
                 reasons=reasons
             ))

@@ -1442,6 +1442,29 @@ class HyperliquidScalper:
             )
             return
 
+        # ── V6.1 TIER 2: RETRACE ENTRY CONFIRMATION ──
+        # Passivbot approach: wait for price to confirm direction before entering.
+        # Check that the last 5m candle close direction aligns with signal direction.
+        try:
+            cached_ind = self.cached_indicators.get(f"{coin}_{self.config.candle_interval}")
+            if cached_ind:
+                raw_candles = cached_ind.get('raw_candles', []) if hasattr(cached_ind, 'get') else []
+                if raw_candles and len(raw_candles) >= 2:
+                    last_candle = raw_candles[-1]
+                    last_close = float(last_candle.get('c', last_candle.get('close', 0)))
+                    last_open = float(last_candle.get('o', last_candle.get('open', 0)))
+                    candle_bullish = last_close > last_open
+                    
+                    signal_long = signal.direction == Direction.LONG
+                    if signal_long and not candle_bullish:
+                        log.debug(f"📊 {coin} [SCALP] retrace: last candle bearish vs LONG signal — waiting")
+                        return
+                    elif not signal_long and candle_bullish:
+                        log.debug(f"📊 {coin} [SCALP] retrace: last candle bullish vs SHORT signal — waiting")
+                        return
+        except Exception:
+            pass  # If retrace check fails, proceed (fail open, not fail closed)
+
         # ── Price + size ──
         current_price = self.prices.get(coin)
         if current_price is None or current_price <= 0:
@@ -1466,9 +1489,38 @@ class HyperliquidScalper:
         is_buy = is_long
 
         # ── TP/SL parameters from config ──
-        # Scalps: use full-size TP (no partial TP — moves are too small to split)
+        # V6.1 TIER 2: ATR-based SL/TP — adapts to each coin's volatility
+        # Uses ATR(14) × multiplier instead of fixed % per coin
+        # Falls back to config % if ATR data unavailable
         full_tp_pct = asset_cfg.take_profit_pct
         sl_pct = asset_cfg.stop_loss_pct
+        
+        # Try to get ATR from cached indicators for dynamic SL/TP
+        cached_ind = self.cached_indicators.get(f"{coin}_{self.config.candle_interval}")
+        if cached_ind:
+            try:
+                atr_arr = cached_ind['atr'] if 'atr' in cached_ind else None
+                if atr_arr is not None and len(atr_arr) > 0:
+                    atr_val = float(atr_arr[-1])
+                    if atr_val and current_price > 0:
+                        atr_pct = atr_val / current_price  # ATR as fraction of price
+                        if atr_pct > 0.001:  # Sanity check — ATR should be > 0.1%
+                            # ATR-based SL: 1.5 × ATR, TP: 2.0 × ATR
+                            # This adapts to volatility — wider stops in volatile markets, tighter in calm
+                            atr_sl = atr_pct * 1.5
+                            atr_tp = atr_pct * 2.0
+                            # Use ATR-based values but cap them within 0.5× to 2× of config values
+                            # (prevents extreme deviations from the tuned config)
+                            min_sl = asset_cfg.stop_loss_pct * 0.5
+                            max_sl = asset_cfg.stop_loss_pct * 2.0
+                            min_tp = asset_cfg.take_profit_pct * 0.5
+                            max_tp = asset_cfg.take_profit_pct * 2.0
+                            sl_pct = max(min_sl, min(max_sl, atr_sl))
+                            full_tp_pct = max(min_tp, min(max_tp, atr_tp))
+                            log.info(f"📊 {coin} ATR-based SL/TP: SL={sl_pct:.4f} TP={full_tp_pct:.4f} (ATR={atr_pct:.4f}, config SL={asset_cfg.stop_loss_pct:.4f} TP={asset_cfg.take_profit_pct:.4f})")
+            except Exception as e:
+                log.debug(f"ATR SL/TP fallback to config: {e}")
+        
         partial_tp_pct = 0  # No partial TP for scalps — keep full winner size
 
         partial_roe = partial_tp_pct * self.config.leverage
@@ -1943,6 +1995,14 @@ class HyperliquidScalper:
                     opened_scalp = False
 
                     if self.config.enable_scalp:
+                        # V6.1 TIER 2: Session filter — skip low-liquidity hours
+                        skip_hours = getattr(self.config, 'skip_utc_hours', [])
+                        if skip_hours:
+                            import datetime as _dt
+                            current_utc_hour = _dt.datetime.utcnow().hour
+                            if current_utc_hour in skip_hours:
+                                continue  # Skip this coin during low-liquidity hours
+                        
                         signal = self._evaluate_scalp_asset(coin)
                         if (
                             signal is not None

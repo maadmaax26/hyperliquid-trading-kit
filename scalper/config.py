@@ -271,11 +271,16 @@ class BotConfig:
     # V5 ENHANCED: Backtested improvements (49% WR→54%, DD 12.7%→6.95%, Sharpe 2.84→3.46)
     max_concurrent_positions: int = 5     # V6: 3→5 — all coins can trade simultaneously, equal 25% sizing
     max_concurrent_swing: int = 0         # V5: Swing disabled (29.1% WR, -$109 drag in backtest)
-    max_daily_loss_pct: float = 0.04      # V5: Tightened 5%→4% (DD 12.7%→6.95%)
-    max_consecutive_losses: int = 3
+    max_daily_loss_pct: float = 0.03      # V6.1 TIER 1: 4%→3% circuit breaker (top bots use 3%)
+    max_consecutive_losses: int = 4      # V6.1 TIER 1: 3→4 — pause after 4 consecutive losses
     loss_cooldown_seconds: int = 600
     max_position_pct: float = 0.175       # 17.5% equity per position (shared with MM bot)
     swing_margin_reserve: float = 0.0     # V5: No swing margin reserved (swing disabled)
+    
+    # V6.1 TIER 2: Session filter — skip low-liquidity hours (optional)
+    # Set to empty list to trade 24/7, or specify UTC hours to skip
+    # 0-6 UTC = Asian session (lower liquidity, wider spreads, more false signals)
+    skip_utc_hours: list = field(default_factory=list)  # Disabled by default — enable with [0,1,2,3,4,5,6] to skip Asian low-liquidity
 
     # ── Timing ──────────────────────────────────────────────────────
     scan_interval_seconds: int = 5

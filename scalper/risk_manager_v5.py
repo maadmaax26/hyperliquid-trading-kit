@@ -272,10 +272,20 @@ class RiskManager:
 
     def calculate_position_size(self, coin: str, asset_cfg, equity: float, 
                                    current_price: float, sz_decimals: int = 4) -> float:
-        """Calculate position size based on risk parameters."""
+        """Calculate position size based on risk parameters.
+        V6.1 TIER 1: Dynamic sizing — reduce 50% after 3 consecutive losses, restore on win.
+        """
         # Get position size percentage from config
         position_size_pct = getattr(asset_cfg, 'position_size_pct', 0.25)
         leverage = getattr(self.config, 'leverage', 7)
+        
+        # ── V6.1 TIER 1: DYNAMIC SIZING ──
+        # After 3 consecutive losses, reduce position size by 50%
+        # After a win, restore to full size
+        # This reduces loss impact during bad streaks
+        if self.consecutive_losses >= 3:
+            position_size_pct *= 0.5
+            log.warning(f"⚠️ Dynamic sizing: {self.consecutive_losses} consecutive losses → size reduced to {position_size_pct*100:.1f}%")
         
         # Calculate raw size
         notional = equity * position_size_pct * leverage
