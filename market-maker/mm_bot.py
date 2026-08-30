@@ -261,9 +261,18 @@ class HyperliquidMarketMaker:
             return 0.0
 
     def _sync_exchange_state(self):
-        """Sync positions and orders from exchange."""
+        """Sync positions and orders from exchange.
+        
+        V6.2: Track realized PnL by comparing equity changes to unrealized PnL.
+        When equity changes more than unrealized PnL explains, the difference is realized.
+        """
         try:
             state = self.info.user_state(self.trade_address)
+            
+            # V6.2: Track realized PnL via equity delta method
+            new_equity = float(state.get("marginSummary", {}).get("accountValue", 0))
+            total_unrealized_new = 0.0
+            
             exchange_positions = {}
             for p in state.get("assetPositions", []):
                 pos = p.get("position", {})
@@ -276,6 +285,20 @@ class HyperliquidMarketMaker:
                         "unrealized_pnl": float(pos.get("unrealizedPnl", 0)),
                         "margin_used": float(pos.get("marginUsed", 0)),
                     }
+                    total_unrealized_new += float(pos.get("unrealizedPnl", 0))
+
+            # V6.2: Realized PnL = equity change - unrealized PnL change
+            # This captures fills that closed positions for a profit/loss
+            if hasattr(self, '_prev_equity') and hasattr(self, '_prev_unrealized'):
+                equity_delta = new_equity - self._prev_equity
+                unrealized_delta = total_unrealized_new - self._prev_unrealized
+                realized_delta = equity_delta - unrealized_delta
+                if abs(realized_delta) > 0.001:  # Only count non-trivial changes
+                    self.daily_pnl += realized_delta
+                    if abs(realized_delta) > 0.01:  # Log only meaningful amounts
+                        log.info(f"💰 Realized PnL: ${realized_delta:+.2f} (equity Δ${equity_delta:+.2f}, uPnL Δ${unrealized_delta:+.2f}) → daily total: ${self.daily_pnl:+.2f}")
+            self._prev_equity = new_equity
+            self._prev_unrealized = total_unrealized_new
 
             # Update inventories
             for coin, inv in self.inventories.items():
@@ -290,11 +313,6 @@ class HyperliquidMarketMaker:
                     inv.entry_price = 0.0
                     inv.unrealized_pnl = 0.0
                     inv.margin_used = 0.0
-
-            # Update daily PnL
-            total_unrealized = sum(inv.unrealized_pnl for inv in self.inventories.values())
-            # Track realized PnL via trade history would go here
-            # For now, daily_pnl is tracked from order fills
 
         except Exception as e:
             log.error(f"Failed to sync exchange state: {e}")
@@ -524,19 +542,25 @@ class HyperliquidMarketMaker:
         return skew
 
     def _should_quote_side(self, coin: str, position_size: float, equity: float, is_buy: bool) -> bool:
-        """Check if we should quote on a given side based on inventory limits."""
+        """Check if we should quote on a given side based on inventory limits.
+        
+        V6.2 FIX: Inventory cap was multiplied by leverage, making it 5x too high.
+        max_inventory_pct is a fraction of EQUITY (not equity × leverage).
+        e.g. 20% of $110 = $22 max inventory, not $22 × 5 = $110.
+        """
         cfg = self.config.assets[coin]
-        max_inv_usd = equity * cfg.max_inventory_pct * cfg.leverage
+        # V6.2 FIX: Remove leverage from cap — max_inventory_pct is % of equity, not notional
+        max_inv_usd = equity * cfg.max_inventory_pct
 
         current_inv_usd = abs(position_size) * self.inventories[coin].last_mid
 
         # If at 80% of max inventory, stop quoting on the side that would increase it
         if current_inv_usd >= max_inv_usd * 0.80:
             if position_size > 0 and not is_buy:
-                # Long and at max — can still sell (reduce)
+                # Long and at/near max — can still sell (reduce)
                 return True
             elif position_size < 0 and is_buy:
-                # Short and at max — can still buy (reduce)
+                # Short and at/near max — can still buy (reduce)
                 return True
             else:
                 return False  # Would increase inventory beyond max
@@ -554,7 +578,7 @@ class HyperliquidMarketMaker:
 
         # V5: Skip quoting in strong trends (ADX > 40) — adverse selection risk
         if self.config.skip_strong_trend and inv.adx > self.config.adx_strong_trend:
-            log.debug(f"📊 {coin}: ADX={inv.adx:.0f} > {self.config.adx_strong_trend} — strong trend, skipping new quotes")
+            log.info(f"📊 {coin}: ADX={inv.adx:.0f} > {self.config.adx_strong_trend} — strong trend, skipping new quotes")
             return
 
         # V5: Skip quoting in dead markets (low volume)
@@ -573,8 +597,10 @@ class HyperliquidMarketMaker:
         bid_price = mid_price * (1 - spread + skew)
         ask_price = mid_price * (1 + spread + skew)
 
+        # V6.2 FIX: Calculate inv_ratio once (without leverage) — used for unwind threshold
+        inv_ratio = (inv.position_size * mid_price) / (equity * cfg.max_inventory_pct) if equity > 0 else 0
+
         # In unwind mode (near max inventory), tighten the unwind side
-        inv_ratio = (inv.position_size * mid_price) / (equity * cfg.max_inventory_pct * cfg.leverage) if equity > 0 else 0
         if abs(inv_ratio) > self.config.inventory_unwind_threshold:
             if inv_ratio > 0:
                 # Long inventory — tighten ask (sell side) to unwind faster
@@ -644,12 +670,12 @@ class HyperliquidMarketMaker:
                 log.error(f"🛑 DAILY LOSS LIMIT: ${self.daily_pnl:.2f} ({daily_loss_pct:.1%})")
                 return False
 
-        # Total inventory check
+        # Total inventory check — V6.2 FIX: use equity only, not equity × leverage
         total_inv_usd = sum(
             abs(inv.position_size) * inv.last_mid
             for inv in self.inventories.values()
         )
-        total_inv_pct = total_inv_usd / (equity * 5) if equity > 0 else 0  # approx with avg lev
+        total_inv_pct = total_inv_usd / equity if equity > 0 else 0
 
         if total_inv_pct > self.config.emergency_close_threshold:
             log.error(f"🛑 EMERGENCY: Total inventory {total_inv_pct:.1%} > {self.config.emergency_close_threshold:.0%}")
@@ -669,7 +695,8 @@ class HyperliquidMarketMaker:
                 continue
 
             cfg = self.config.assets[coin]
-            max_inv_usd = equity * cfg.max_inventory_pct * cfg.leverage
+            # V6.2 FIX: Remove leverage from cap — max_inventory_pct is % of equity
+            max_inv_usd = equity * cfg.max_inventory_pct
             current_inv_usd = abs(inv.position_size) * inv.last_mid
 
             if max_inv_usd <= 0:

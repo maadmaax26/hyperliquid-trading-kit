@@ -50,23 +50,23 @@ class MMAssetConfig:
 
 XMR_MM = MMAssetConfig(
     coin="XMR",
-    order_size_pct=0.03,           # 3% equity per order — $17.88 notional at 5x, above $10 min
+    order_size_pct=0.02,           # V6.2: 2% × 5x = $12.40 notional (above $10 min), ~50% of cap per fill
     spread_pct=0.0015,             # 0.15% half-spread (raw spread 0.044%, net edge +0.030%/RT)
     min_spread_pct=0.0006,         # 0.06% floor — never quote tighter than this
     max_spread_pct=0.0050,         # 0.50% ceiling — in extreme trends, widen up to this
-    max_inventory_pct=0.20,        # 20% max position — same as V6.1 kPEPE
+    max_inventory_pct=0.30,        # V6.2: 20%→30% — $37.20 cap, 3 fills before block
     inventory_skew_factor=0.6,     # Skew quotes 60% based on inventory direction
     leverage=5,                    # HL max for XMR = 5x
-    min_order_notional=10.0,
+    min_order_notional=10.0,       # $10 HL minimum
 )
 
 TAO_MM = MMAssetConfig(
     coin="TAO",
-    order_size_pct=0.03,           # 3% equity per order — $17.88 notional at 5x, above $10 min
+    order_size_pct=0.02,           # V6.2: 2% × 5x = $12.40 notional (above $10 min)
     spread_pct=0.0012,             # 0.12% half-spread (raw spread 0.033%, net edge +0.019%/RT)
     min_spread_pct=0.0005,         # 0.05% floor
     max_spread_pct=0.0045,         # 0.45% ceiling
-    max_inventory_pct=0.20,        # 20% max position
+    max_inventory_pct=0.30,        # V6.2: 20%→30% — match XMR
     inventory_skew_factor=0.6,
     leverage=5,                    # HL max for TAO = 5x
     min_order_notional=10.0,
