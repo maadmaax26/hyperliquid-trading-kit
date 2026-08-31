@@ -381,26 +381,19 @@ class HyperliquidScalper:
         """Get total portfolio PnL: (unrealized, realized, total).
         
         Returns:
-            (unrealized_pnl, realized_pnl, total_portfolio_pnl)
+            (unrealized_pnl, realized, total_portfolio_pnl)
         """
         try:
             state = self.info.user_state(self.address)
             unrealized = 0.0
             
-            # Unrealized from open positions
+            # Unrealized from open positions — use API's unrealizedPnl field directly
+            # (markPx is often missing from user_state, so don't calculate from it)
             for pos in state.get("assetPositions", []):
                 position = pos.get("position", {})
                 coin = position.get("coin", "")
-                entry_px = float(position.get("entryPx", 0))
-                current_px = float(position.get("markPx", 0))
-                size = float(position.get("szi", 0))
-                
-                if abs(size) > 0 and entry_px > 0:
-                    if size > 0:  # Long
-                        pnl = (current_px - entry_px) * abs(size)
-                    else:  # Short
-                        pnl = (entry_px - current_px) * abs(size)
-                    unrealized += pnl
+                uPnL = float(position.get("unrealizedPnl", 0))
+                unrealized += uPnL
             
             # Realized from trade history
             stats = self.risk_mgr.get_stats()
@@ -1987,7 +1980,10 @@ class HyperliquidScalper:
         # State Verification
         try:
             exch_pos = self._get_all_exchange_positions()
-            state_file_health = "CLEAN" if len(self.risk_mgr.positions) == len(exch_pos) else "DESYNC"
+            # Only compare positions for coins THIS bot trades (exclude MM bot coins)
+            scalper_coins = set(self.config.assets.keys())
+            exch_scalper_pos = {k: v for k, v in exch_pos.items() if k in scalper_coins}
+            state_file_health = "CLEAN" if len(self.risk_mgr.positions) == len(exch_scalper_pos) else "DESYNC"
         except:
             state_file_health = "ERROR"
         state_status = f"State: {state_file_health} | Daily PnL: ${self.risk_mgr.daily_pnl:>+7.2f}"
