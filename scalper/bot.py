@@ -1282,8 +1282,9 @@ class HyperliquidScalper:
                 indicators = self.cached_indicators.get(
                     f"{coin}_{self.config.candle_interval}"
                 )
-                if indicators and indicators.atr > 0:
-                    atr_pct = indicators.atr / entry
+                atr_val = indicators.get('atr', 0) if indicators else 0
+                if atr_val and atr_val > 0:
+                    atr_pct = atr_val / entry
                     sl_pct = min(atr_pct * 1.5, sl_pct * 2)
                     tp_pct = min(atr_pct * 2.0, tp_pct * 2)
 
