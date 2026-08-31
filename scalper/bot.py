@@ -79,6 +79,7 @@ class HyperliquidScalper:
         self.prices: Dict[str, float] = {}
         self.last_candle_fetch: Dict[str, float] = {}
         self.cached_indicators: Dict[str, IndicatorSet] = {}
+        self._orphan_recovery_attempted: set = set()  # V6.3: prevent orphan order spam
         self.partial_tp: Dict[str, Dict] = {}
         self.cycle_count = 0
         self.start_time = time.time()
@@ -117,6 +118,8 @@ class HyperliquidScalper:
         # ── Get initial balance ───────────────────────────────────
         balance = self._get_equity()
         self.risk_mgr.reset_daily(balance)
+        # V6.3: Reset consecutive losses on fresh start — don't carry over old session's losses
+        self.risk_mgr.consecutive_losses = 0
         log.info(f"💰 Starting equity: ${float(balance):.2f}")
         log.info(
             f"📋 Strategies: "
@@ -887,45 +890,49 @@ class HyperliquidScalper:
         self, coin: str, is_buy: bool, size: float,
         trigger_price: float, tpsl: str,
     ) -> Optional[str]:
-        """Place a TP or SL trigger order with limit execution.
+        """Place a TP or SL trigger order.
 
-        Uses limit orders instead of market orders when triggered:
-        - TP: limit at trigger price (exact fill)
-        - SL: limit slightly past trigger to ensure fill
-              (0.1% slippage allowance)
+        V6.3 FIX: SL orders now use isMarket=True — when trigger hits, fires a
+        market order that fills instantly even if price gaps. Previously used
+        limit orders with 0.25% slippage which got overrun on fast moves,
+        causing losses 2-4× wider than the set SL distance.
+
+        - TP: limit at trigger price (exact fill, no slippage)
+        - SL: market order (isMarket=True, fills at any price)
         Returns order ID.
         """
         try:
             size = float(self._round_size(size, coin))
             trigger_price = float(self._round_price(trigger_price, coin))
 
-            # Set limit price:
-            # TP orders: fill at trigger price exactly
-            # SL orders: allow 0.25% slippage to ensure fill (was 0.1% — too tight, caused rejected SLs)
             if tpsl == "tp":
+                # TP: limit at trigger price exactly
                 limit_price = trigger_price
+                is_market = False
             else:
-                # SL: set limit worse than trigger to ensure fill
-                # is_buy=True means we're buying to close a SHORT (price going up)
-                # is_buy=False means we're selling to close a LONG (price going down)
-                slippage = 0.0025  # 0.25% (widened from 0.1% to prevent SL rejection)
+                # SL: market order — fills instantly when triggered
+                # No limit price needed, but HL API requires one. Use trigger
+                # with wide slippage as fallback (market ignores it).
+                slippage = 0.05  # 5% fallback (market order fills at best price)
                 if is_buy:
                     limit_price = trigger_price * (1 + slippage)
                 else:
                     limit_price = trigger_price * (1 - slippage)
+                is_market = True
 
             limit_price = float(self._round_price(limit_price, coin))
 
             log.debug(
                 f"TP/SL: coin={coin} is_buy={is_buy} size={size} "
-                f"trigger={trigger_price} limit={limit_price} tpsl={tpsl}"
+                f"trigger={trigger_price} limit={limit_price} "
+                f"market={is_market} tpsl={tpsl}"
             )
 
             result = self.exchange.order(
                 coin, is_buy, size, limit_price,
                 {"trigger": {
                     "triggerPx": float(trigger_price),
-                    "isMarket": False,
+                    "isMarket": is_market,
                     "tpsl": tpsl,
                 }},
                 reduce_only=True,
@@ -1252,6 +1259,13 @@ class HyperliquidScalper:
                 if coin not in self.config.assets:
                     continue  # MM bot's coin (XMR, TAO) — not our problem
 
+                # V6.3: Prevent order spam — only try to recover each coin once
+                if coin in self._orphan_recovery_attempted:
+                    continue
+
+                # Mark as attempted BEFORE placing orders (prevents spam on next cycle if this fails)
+                self._orphan_recovery_attempted.add(coin)
+
                 # ORPHANED POSITION DETECTED
                 size = exch_pos["size"]
                 szi = exch_pos["szi"]
@@ -1278,8 +1292,10 @@ class HyperliquidScalper:
                 atr_val = indicators.get('atr', 0) if indicators else 0
                 if atr_val and atr_val > 0:
                     atr_pct = atr_val / entry
-                    sl_pct = min(atr_pct * 1.5, sl_pct * 2)
-                    tp_pct = min(atr_pct * 2.0, tp_pct * 2)
+                    sl_pct = min(atr_pct * 1.0, sl_pct)  # V6.3: cap at config, was × 2
+                    tp_pct = max(tp_pct, min(atr_pct * 2.5, tp_pct * 2))  # V6.3: wider TP
+                    if tp_pct < sl_pct * 2:  # V6.3: ensure 2:1 ratio
+                        tp_pct = sl_pct * 2
 
                 if is_long:
                     sl_price = entry * (1 - sl_pct)
@@ -1301,9 +1317,8 @@ class HyperliquidScalper:
                 )
 
                 if sl_oid or tp_oid:
-                    # Register with risk manager
-                    from risk_manager_v5 import Position
-                    pos = Position(
+                    # Register with risk manager (ActivePosition imported at top of file)
+                    pos = ActivePosition(
                         coin=coin,
                         direction=direction,
                         size=size,
@@ -1517,9 +1532,9 @@ class HyperliquidScalper:
         indicators = self.cached_indicators.get(f"{coin}_{self.config.candle_interval}")
         if indicators:
             try:
-                atr_arr = indicators['atr'] if 'atr' in indicators else None
-                if atr_arr is not None and len(atr_arr) > 0:
-                    atr_val = float(atr_arr[-1])  # latest ATR value
+                atr_arr = indicators.get('atr', None)
+                if atr_arr is not None:
+                    atr_val = float(atr_arr) if not isinstance(atr_arr, (list, tuple)) else float(atr_arr[-1])
                     current_price_val = self.prices.get(coin, 0)
                     if atr_val and current_price_val and current_price_val > 0:
                         atr_pct = atr_val / current_price_val * 100
@@ -1551,12 +1566,27 @@ class HyperliquidScalper:
                     swing_ema50 = float(swing_ema50_arr[-1])
                     if swing_ema50 > 0:
                         trend_dev = (swing_close - swing_ema50) / swing_ema50
-                        # V6.1: Stronger trend filter — block counter-trend when 1h ADX > 25
-                        if signal.direction == Direction.LONG and trend_dev < -0.003:
-                            log.debug(f"📊 {coin} [SCALP] LONG skipped — 1h close {trend_dev*100:.2f}% below EMA50 (counter-trend)")
+                        # V6.3 FIX: STRICT trend filter — block ALL counter-trend trades
+                        # Old filter: only blocked if 0.3% against trend (too loose)
+                        # New filter: block if price is on wrong side of EMA50 AT ALL
+                        # Also check EMA20 vs EMA50 for trend confirmation
+                        swing_ema20_arr = swing_indicators.get('ema_20', None)
+                        trend_bullish = trend_dev > 0
+                        if swing_ema20_arr is not None and len(swing_ema20_arr) > 0:
+                            swing_ema20 = float(swing_ema20_arr[-1])
+                            trend_bullish = trend_dev > 0 and swing_ema20 > swing_ema50
+                        
+                        if signal.direction == Direction.LONG and not trend_bullish:
+                            log.info(
+                                f"🚫 {coin} [SCALP] LONG blocked — 1h counter-trend "
+                                f"(close {trend_dev*100:.2f}% vs EMA50, ADX={swing_adx:.0f})"
+                            )
                             return
-                        elif signal.direction == Direction.SHORT and trend_dev > 0.003:
-                            log.debug(f"📊 {coin} [SCALP] SHORT skipped — 1h close {trend_dev*100:.2f}% above EMA50 (counter-trend, ADX={swing_adx:.0f})")
+                        elif signal.direction == Direction.SHORT and trend_bullish:
+                            log.info(
+                                f"🚫 {coin} [SCALP] SHORT blocked — 1h counter-trend "
+                                f"(close {trend_dev*100:.2f}% vs EMA50, ADX={swing_adx:.0f})"
+                            )
                             return
             except (TypeError, IndexError, KeyError):
                 pass
@@ -1636,25 +1666,30 @@ class HyperliquidScalper:
         cached_ind = self.cached_indicators.get(f"{coin}_{self.config.candle_interval}")
         if cached_ind:
             try:
-                atr_arr = cached_ind['atr'] if 'atr' in cached_ind else None
-                if atr_arr is not None and len(atr_arr) > 0:
-                    atr_val = float(atr_arr[-1])
+                atr_arr = cached_ind.get('atr', None)
+                if atr_arr is not None:
+                    # ATR is stored as a float (latest value), not an array
+                    atr_val = float(atr_arr) if not isinstance(atr_arr, (list, tuple)) else float(atr_arr[-1])
                     if atr_val and current_price > 0:
                         atr_pct = atr_val / current_price  # ATR as fraction of price
                         if atr_pct > 0.001:  # Sanity check — ATR should be > 0.1%
-                            # ATR-based SL: 1.5 × ATR, TP: 2.0 × ATR
-                            # This adapts to volatility — wider stops in volatile markets, tighter in calm
-                            atr_sl = atr_pct * 1.5
-                            atr_tp = atr_pct * 2.0
-                            # Use ATR-based values but cap them within 0.5× to 2× of config values
-                            # (prevents extreme deviations from the tuned config)
+                            # V6.3 FIX: Risk/reward rebalance — SL capped at config (no upward expansion)
+                            # TP can expand up to 2× config for bigger winners
+                            # Target ratio: TP ≥ 2× SL (was ~1:1, causing losses 1.66× bigger than wins)
+                            atr_sl = atr_pct * 1.0  # Use ATR directly, not 1.5× (was too wide)
+                            atr_tp = atr_pct * 2.5  # Wider TP for better risk/reward
+                            # SL: cap at config value (tighter stops, never wider than config)
+                            # TP: allow up to 2× config (bigger winners)
                             min_sl = asset_cfg.stop_loss_pct * 0.5
-                            max_sl = asset_cfg.stop_loss_pct * 2.0
-                            min_tp = asset_cfg.take_profit_pct * 0.5
+                            max_sl = asset_cfg.stop_loss_pct  # V6.3: cap at config, was × 2.0
+                            min_tp = asset_cfg.take_profit_pct  # V6.3: floor at config, was × 0.5
                             max_tp = asset_cfg.take_profit_pct * 2.0
                             sl_pct = max(min_sl, min(max_sl, atr_sl))
                             full_tp_pct = max(min_tp, min(max_tp, atr_tp))
-                            log.info(f"📊 {coin} ATR-based SL/TP: SL={sl_pct:.4f} TP={full_tp_pct:.4f} (ATR={atr_pct:.4f}, config SL={asset_cfg.stop_loss_pct:.4f} TP={asset_cfg.take_profit_pct:.4f})")
+                            # V6.3: Ensure minimum 2:1 TP:SL ratio
+                            if full_tp_pct < sl_pct * 2:
+                                full_tp_pct = sl_pct * 2
+                            log.info(f"📊 {coin} ATR SL/TP: SL={sl_pct:.4f} TP={full_tp_pct:.4f} (ratio {full_tp_pct/sl_pct:.1f}:1, ATR={atr_pct:.4f})")
             except Exception as e:
                 log.debug(f"ATR SL/TP fallback to config: {e}")
         
